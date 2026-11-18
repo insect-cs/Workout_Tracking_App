@@ -4,8 +4,34 @@
 > Read this file at the start of any new session to restore context. Update it
 > after every meaningful change.
 >
-> **Last updated:** 2026-11-18 (Material 3 + Hero animation pass)
+> **Last updated:** 2026-11-18 (theme toggle + GitHub state saved)
 > **Session model:** Each new feature/bugfix session appends to §5 Task Log.
+
+---
+
+## 0. Current State Snapshot (2026-11-18)
+
+- **Git / GitHub:** `workout_app` is a Git repository. `origin` is
+  `https://github.com/insect-cs/Workout_Tracking_App.git`, branch `main`. The
+  theme-change commit `8ddc2e4` is on GitHub; at the end of this session the
+  working tree is clean and synced with `origin/main`.
+- **UI:** Global Material 3 expressive theme with seeded vibrant palette,
+  app-wide Hero flights, route-based bottom navigation with a stable selected
+  icon, and a Home header toggle for light/dark mode.
+- **Pose tracking:** Web uses TensorFlow.js MoveNet with bundled model files;
+  Android/iOS use ML Kit. Landmark tracking, rep counting, angles, and exercise
+  identification run per frame. Videos are never uploaded to Gemini; the model
+  is preloaded and full-video byte reads were removed.
+- **Configuration / security:** Gemini access uses compile-time
+  `String.fromEnvironment('GEMINI_API_KEY', defaultValue: '')`. The real key is
+  only in local ignored `env.json`; tracked files contain no real API keys,
+  tokens, or credential files. `env.example.json` is a placeholder template.
+- **Validation:** `flutter analyze --no-pub` clean, `flutter test` 2/2 passed,
+  `flutter build web --release --dart-define-from-file=env.json` successful.
+- **Local run:** `flutter run --dart-define-from-file=env.json`, or use the VS
+  Code **workout_app (Chrome, local env)** configuration / `run_local.bat`.
+- **Remaining backlog:** see §7 (web live camera, persistence, form feedback,
+  multi-person detection, and final user verification).
 
 ---
 
@@ -340,6 +366,12 @@ flutter build web --release
   `test/app_smoke_test.dart`, `README.md`.
 - **Result:** `flutter analyze --no-pub` clean; `flutter test` 2/2 passed;
   smoke test verifies toggling dark → light → dark.
+
+### 2026-11-18 — Project state snapshot and GitHub verification
+- **What:** Added §0 “Current State Snapshot” with the final feature, security,
+  validation, and local-run status for today's session.
+- **Result:** Verified `origin/main` contains theme commit `8ddc2e4`, no real
+  API keys are tracked, and `env.json` remains ignored by Git.
 
 ---
 
