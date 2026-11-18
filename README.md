@@ -41,3 +41,8 @@ double-click `run_local.bat`.
 API keys or credentials. Restrict the key in Google AI Studio to the APIs this
 app uses.
 
+## Theme
+
+The Home header contains a light/dark toggle. It switches the seeded Material 3
+theme and the app's custom tonal palette together. The app starts in dark mode.
+

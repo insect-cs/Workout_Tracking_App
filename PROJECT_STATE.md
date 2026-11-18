@@ -328,6 +328,19 @@ flutter build web --release
 - **Result:** `flutter analyze --no-pub` clean; `flutter test` 2/2 passed;
   `flutter build web --release --dart-define-from-file=env.json` success.
 
+### 2026-11-18 — Home light/dark theme toggle
+- **What:** Added a global `ThemeController` and a Material 3 icon toggle in the
+  Home header. The app starts dark; toggling switches both the seeded
+  `MaterialApp` theme and every custom `AppColors` tonal role to light/dark.
+- **What:** Converted `AppColors` constants to brightness-aware getters, removed
+  stale `const` usages across screens, and replaced remaining hard-coded dark
+  card/gradient colors with dynamic roles.
+- **Files:** `lib/theme/theme_controller.dart` (new), `lib/theme/app_colors.dart`,
+  `lib/main.dart`, `lib/screens/home_screen.dart`, all other `lib/screens/*.dart`,
+  `test/app_smoke_test.dart`, `README.md`.
+- **Result:** `flutter analyze --no-pub` clean; `flutter test` 2/2 passed;
+  smoke test verifies toggling dark → light → dark.
+
 ---
 
 ## 6. Gotchas / Lessons Learned

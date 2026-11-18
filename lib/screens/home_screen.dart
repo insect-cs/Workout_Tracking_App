@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_hero_tags.dart';
+import '../theme/theme_controller.dart';
 import '../state/workout_state.dart';
 import '../models/workout_models.dart';
 
@@ -114,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeader(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: Color(0x3320293A))),
       ),
@@ -129,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 40,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     colors: [
                       AppColors.primaryOrange,
                       AppColors.surfaceHigh,
@@ -141,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 padding: const EdgeInsets.all(2),
                 child: Container(
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppColors.surfaceLow,
                     shape: BoxShape.circle,
                   ),
@@ -174,13 +175,28 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
 
           // Title
-          Text(
-            'WORKOUT TRACKING',
-            style: GoogleFonts.spaceGrotesk(
-              fontSize: 17,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-              color: AppColors.textWhite,
+          Flexible(
+            child: Text(
+              'WORKOUT TRACKING',
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+                color: AppColors.textWhite,
+              ),
+            ),
+          ),
+
+          // Light / dark theme toggle
+          IconButton(
+            onPressed: ThemeController.toggle,
+            tooltip: ThemeController.isDark
+                ? 'Switch to light mode'
+                : 'Switch to dark mode',
+            icon: Icon(
+              ThemeController.isDark ? Icons.light_mode : Icons.dark_mode,
+              color: AppColors.primaryOrange,
             ),
           ),
 
@@ -196,7 +212,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: AppColors.border),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.bookmark_border,
                 color: AppColors.textLight,
                 size: 20,
@@ -243,7 +259,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.local_fire_department,
                 color: AppColors.primaryOrange,
                 size: 16,
@@ -265,7 +281,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 width: 4,
                 height: 4,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: AppColors.primaryOrange,
                   shape: BoxShape.circle,
                 ),
@@ -318,7 +334,7 @@ class _HomeScreenState extends State<HomeScreen> {
             shape: WidgetStateProperty.all(
               RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
-                side: const BorderSide(color: AppColors.border),
+                side: BorderSide(color: AppColors.border),
               ),
             ),
             padding: const WidgetStatePropertyAll(
@@ -372,8 +388,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildAICalloutCard() {
     return Container(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1D1F27), AppColors.surfaceLow],
+        gradient: LinearGradient(
+          colors: [AppColors.cardInset, AppColors.surfaceLow],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -410,7 +426,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Hero(
                         tag: AppHeroTags.aiGenerator,
-                        child: const Icon(
+                        child: Icon(
                           Icons.auto_awesome,
                           color: AppColors.primaryOrange,
                           size: 14,
@@ -652,11 +668,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1D1F27),
+                    color: AppColors.cardInset,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: AppColors.border),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.add,
                     color: AppColors.primaryOrange,
                     size: 20,
@@ -677,7 +693,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Flexible(
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.repeat,
                         color: AppColors.primaryOrange,
                         size: 14,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:workout_app/main.dart';
+import 'package:workout_app/theme/theme_controller.dart';
 
 void main() {
   testWidgets('app boots on Home and tab navigation works', (tester) async {
@@ -50,5 +51,16 @@ void main() {
 
     expect(find.text('Exercise Catalog'), findsOneWidget,
         reason: 'Home should render after tab round-trip');
+
+    // Home theme toggle switches the global Material 3 theme mode.
+    expect(ThemeController.isDark, isTrue);
+    await tester.tap(find.byTooltip('Switch to light mode'));
+    await tester.pumpAndSettle();
+    expect(ThemeController.mode.value, ThemeMode.light);
+    expect(find.byTooltip('Switch to dark mode'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Switch to dark mode'));
+    await tester.pumpAndSettle();
+    expect(ThemeController.mode.value, ThemeMode.dark);
   });
 }

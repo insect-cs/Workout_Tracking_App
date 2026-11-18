@@ -982,7 +982,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
@@ -997,7 +997,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: AppColors.border),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.arrow_back_ios_new,
                 color: AppColors.textSlate,
                 size: 16,
@@ -1040,7 +1040,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
+                Icon(
                   Icons.auto_awesome,
                   color: AppColors.primaryOrange,
                   size: 12,
@@ -1506,7 +1506,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.circle, color: AppColors.rose, size: 8),
+                      Icon(Icons.circle, color: AppColors.rose, size: 8),
                       const SizedBox(width: 5),
                       Text(
                         'LIVE POSE TRACKING',
@@ -1744,7 +1744,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(
+            SizedBox(
               width: 20,
               height: 20,
               child: CircularProgressIndicator(
@@ -1789,7 +1789,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: AppColors.rose, size: 20),
+          Icon(Icons.error_outline, color: AppColors.rose, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -1920,10 +1920,10 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.orangeSoft, Color(0x0AFF6B00)],
+          colors: [AppColors.orangeSoft, AppColors.orangeFade],
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.orangeBorder),
@@ -1933,7 +1933,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.sports_gymnastics,
                 color: AppColors.primaryOrange,
                 size: 20,
@@ -1991,7 +1991,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
           const SizedBox(height: 10),
           Row(
             children: [
-              const Icon(Icons.bolt, color: AppColors.primaryOrange, size: 14),
+              Icon(Icons.bolt, color: AppColors.primaryOrange, size: 14),
               const SizedBox(width: 4),
               Text(
                 'Engine: ${result.engineUsed}',
@@ -2021,7 +2021,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.accessibility_new,
                   color: AppColors.primaryOrange,
                   size: 16,
@@ -2149,7 +2149,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.fitness_center,
                 color: AppColors.primaryOrange,
                 size: 16,
@@ -2199,7 +2199,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.orangeBorder, width: 2),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.accessibility_new,
               color: AppColors.primaryOrange,
               size: 36,
@@ -2237,7 +2237,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.remove_red_eye_outlined,
                     color: AppColors.primaryOrange,
                     size: 16,

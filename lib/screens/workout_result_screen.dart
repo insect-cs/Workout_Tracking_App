@@ -140,7 +140,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                   ),
                 ],
               ),
-              child: const Center(
+              child: Center(
                 child: CircularProgressIndicator(
                   valueColor: AlwaysStoppedAnimation<Color>(
                     AppColors.primaryOrange,
@@ -174,7 +174,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
+                Icon(
                   Icons.auto_awesome,
                   color: AppColors.primaryOrange,
                   size: 14,
@@ -286,7 +286,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
   Widget _buildHeader(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: Color(0x3320293A))),
       ),
@@ -306,7 +306,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: AppColors.border),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.arrow_back,
                     color: AppColors.textLight,
                     size: 18,
@@ -346,7 +346,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
+                Icon(
                   Icons.auto_awesome,
                   color: AppColors.primaryOrange,
                   size: 12,
@@ -374,8 +374,8 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
       tag: AppHeroTags.workout(workout.id),
       child: Container(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF1D1F27), AppColors.cardSurface],
+          gradient: LinearGradient(
+            colors: [AppColors.cardInset, AppColors.cardSurface],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -420,7 +420,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                       Container(
                         width: 5,
                         height: 5,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           color: AppColors.emerald,
                           shape: BoxShape.circle,
                         ),
@@ -582,7 +582,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.hourglass_top,
                       color: AppColors.primaryOrange,
                       size: 12,
@@ -623,7 +623,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                         margin: const EdgeInsets.only(top: 5, right: 6),
                         width: 5,
                         height: 5,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           color: AppColors.primaryOrange,
                           shape: BoxShape.circle,
                         ),
@@ -846,11 +846,11 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: AppColors.primaryOrange),
+                    side: BorderSide(color: AppColors.primaryOrange),
                   ),
                   content: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.check_circle,
                         color: AppColors.primaryOrange,
                         size: 20,
@@ -900,7 +900,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                   onPressed: widget.onGoHome,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.textLight,
-                    side: const BorderSide(color: AppColors.border),
+                    side: BorderSide(color: AppColors.border),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -930,7 +930,7 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                   onPressed: widget.onBackToInput,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.textLight,
-                    side: const BorderSide(color: AppColors.border),
+                    side: BorderSide(color: AppColors.border),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),

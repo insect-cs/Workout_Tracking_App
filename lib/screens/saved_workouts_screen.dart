@@ -106,7 +106,7 @@ class _SavedWorkoutsScreenState extends State<SavedWorkoutsScreen> {
   Widget _buildHeader(BuildContext context, int count) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: Color(0x3320293A))),
       ),
@@ -127,7 +127,7 @@ class _SavedWorkoutsScreenState extends State<SavedWorkoutsScreen> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.arrow_back,
                       color: AppColors.textLight,
                       size: 18,
@@ -285,7 +285,7 @@ class _SavedWorkoutsScreenState extends State<SavedWorkoutsScreen> {
                             ),
                           );
                         },
-                        child: const Icon(
+                        child: Icon(
                           Icons.delete_outline,
                           size: 16,
                           color: AppColors.textMuted,
@@ -441,7 +441,7 @@ class _SavedWorkoutsScreenState extends State<SavedWorkoutsScreen> {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.border),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.bookmark_border,
               color: AppColors.primaryOrange,
               size: 28,
@@ -477,8 +477,8 @@ class _SavedWorkoutsScreenState extends State<SavedWorkoutsScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.surfaceLow, Color(0xFF1D1F27)],
+        gradient: LinearGradient(
+          colors: [AppColors.surfaceLow, AppColors.cardInset],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),
@@ -496,7 +496,7 @@ class _SavedWorkoutsScreenState extends State<SavedWorkoutsScreen> {
                   children: [
                     Hero(
                       tag: AppHeroTags.aiGenerator,
-                      child: const Icon(
+                      child: Icon(
                         Icons.auto_awesome,
                         color: AppColors.primaryOrange,
                         size: 14,

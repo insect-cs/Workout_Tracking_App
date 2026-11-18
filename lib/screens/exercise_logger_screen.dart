@@ -182,11 +182,11 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: AppColors.primaryOrange),
+              side: BorderSide(color: AppColors.primaryOrange),
             ),
             content: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.alarm_on,
                   color: AppColors.primaryOrange,
                   size: 20,
@@ -269,7 +269,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: AppColors.rose),
+            side: BorderSide(color: AppColors.rose),
           ),
           content: Text(
             'Log at least 1 set before saving session.',
@@ -331,11 +331,11 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: AppColors.emerald),
+          side: BorderSide(color: AppColors.emerald),
         ),
         content: Row(
           children: [
-            const Icon(Icons.check_circle, color: AppColors.emerald, size: 20),
+            Icon(Icons.check_circle, color: AppColors.emerald, size: 20),
             const SizedBox(width: 10),
             Text(
               'Exercise session logged successfully!',
@@ -397,7 +397,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: Color(0x3320293A))),
       ),
@@ -418,7 +418,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.arrow_back,
                       color: AppColors.textLight,
                       size: 18,
@@ -464,7 +464,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.timer,
                     color: AppColors.primaryOrange,
                     size: 12,
@@ -640,7 +640,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: AppColors.border),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.refresh,
                               color: AppColors.textSlate,
                               size: 14,
@@ -711,7 +711,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.stop,
                                     color: AppColors.rose,
                                     size: 14,
@@ -776,7 +776,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
           ),
 
           const SizedBox(height: 14),
-          const Divider(color: AppColors.border, height: 1),
+          Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 10),
 
           // Active Set Under-Tension Execution Timer
@@ -926,7 +926,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                       ? _selectedExercise
                       : exerciseNames.first,
                   dropdownColor: AppColors.cardSurface,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.keyboard_arrow_down,
                     color: AppColors.primaryOrange,
                   ),
@@ -1009,7 +1009,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
               if (_isSetExecuting)
                 Row(
                   children: [
-                    const Icon(Icons.timer, color: AppColors.emerald, size: 14),
+                    Icon(Icons.timer, color: AppColors.emerald, size: 14),
                     const SizedBox(width: 4),
                     Text(
                       _formatTime(_setExecutionSeconds),
@@ -1232,7 +1232,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
         ),
         child: Column(
           children: [
-            const Icon(
+            Icon(
               Icons.fitness_center,
               color: AppColors.textSlate,
               size: 28,
@@ -1294,7 +1294,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
               ],
             ),
           ),
-          const Divider(height: 1, color: AppColors.border),
+          Divider(height: 1, color: AppColors.border),
           ..._currentSessionSets.map((s) {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1366,7 +1366,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                             }
                           });
                         },
-                        child: const Icon(
+                        child: Icon(
                           Icons.close,
                           color: AppColors.rose,
                           size: 16,
@@ -1462,7 +1462,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
+              Icon(
                 Icons.history_toggle_off,
                 size: 48,
                 color: AppColors.textSlate,
@@ -1500,7 +1500,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
           children: [
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.history,
                   color: AppColors.primaryOrange,
                   size: 16,
@@ -1535,7 +1535,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.delete_sweep,
                       color: AppColors.rose,
                       size: 14,
@@ -1644,7 +1644,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                   ],
                 ),
                 const SizedBox(height: 12),
-                const Divider(color: AppColors.border, height: 1),
+                Divider(color: AppColors.border, height: 1),
                 const SizedBox(height: 10),
 
                 // Sets Details Grid/List
@@ -1709,11 +1709,11 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
           backgroundColor: AppColors.cardSurface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: AppColors.border),
+            side: BorderSide(color: AppColors.border),
           ),
           title: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.warning_amber_rounded,
                 color: AppColors.rose,
                 size: 22,
@@ -1759,11 +1759,11 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: const BorderSide(color: AppColors.rose),
+                      side: BorderSide(color: AppColors.rose),
                     ),
                     content: Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.delete_outline,
                           color: AppColors.rose,
                           size: 20,
@@ -1935,7 +1935,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                 color: AppColors.orangeSoft,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.file_download_outlined,
                 color: AppColors.primaryOrange,
                 size: 16,
@@ -1966,7 +1966,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                 ],
               ),
             ),
-            const Icon(
+            Icon(
               Icons.chevron_right,
               color: AppColors.textSlate,
               size: 18,
@@ -2078,7 +2078,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                 ],
               ),
             ),
-            const Icon(Icons.download, color: AppColors.textSlate, size: 18),
+            Icon(Icons.download, color: AppColors.textSlate, size: 18),
           ],
         ),
       ),
@@ -2098,7 +2098,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: AppColors.primaryOrange),
+          side: BorderSide(color: AppColors.primaryOrange),
         ),
         content: Text(
           'Generating ${format.toUpperCase()} export...',
@@ -2122,7 +2122,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: AppColors.emerald),
+              side: BorderSide(color: AppColors.emerald),
             ),
             content: Text(
               kIsWeb
@@ -2146,7 +2146,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: AppColors.rose),
+              side: BorderSide(color: AppColors.rose),
             ),
             content: Text(
               'Export failed: $e',
@@ -2274,7 +2274,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                       color: AppColors.orangeSoft,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.show_chart,
                       color: AppColors.primaryOrange,
                       size: 16,
@@ -2329,7 +2329,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
           // Chart Canvas (renders the selected visualization)
           SizedBox(height: 160, child: _buildOverallChart(chartPoints)),
           const SizedBox(height: 12),
-          const Divider(color: AppColors.border, height: 1),
+          Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 10),
 
           // Footnote stats
@@ -2348,7 +2348,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                   Container(
                     width: 8,
                     height: 8,
-                    decoration: const BoxDecoration(
+                    decoration: BoxDecoration(
                       color: AppColors.primaryOrange,
                       shape: BoxShape.circle,
                     ),
@@ -2613,7 +2613,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
     }
 
     final total = nonEmpty.fold(0.0, (a, b) => a + b.value);
-    const sliceColors = [
+    final sliceColors = [
       AppColors.primaryOrange,
       AppColors.emerald,
       AppColors.amber,
@@ -2723,7 +2723,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                       color: AppColors.emerald.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.pie_chart,
                       color: AppColors.emerald,
                       size: 16,

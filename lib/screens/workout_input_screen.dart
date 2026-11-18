@@ -121,7 +121,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
   Widget _buildHeader(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: Color(0x3320293A))),
       ),
@@ -142,7 +142,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.arrow_back,
                       color: AppColors.textLight,
                       size: 18,
@@ -216,7 +216,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
                 children: [
                   Hero(
                     tag: AppHeroTags.aiGenerator,
-                    child: const Icon(
+                    child: Icon(
                       Icons.auto_awesome,
                       color: AppColors.primaryOrange,
                       size: 12,
@@ -276,7 +276,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
               onTap: _shuffleName,
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.casino_outlined,
                     color: AppColors.primaryOrange,
                     size: 14,
