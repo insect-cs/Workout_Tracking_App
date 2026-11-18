@@ -34,13 +34,9 @@ class _RouteChangeObserver extends NavigatorObserver {
   void didPop(Route route, Route? previousRoute) =>
       onChanged(previousRoute?.settings.name);
 
-  @override
-  void didRemove(Route route, Route? previousRoute) =>
-      onChanged(previousRoute?.settings.name);
-
-  @override
-  void didReplace({Route? newRoute, Route? oldRoute}) =>
-      onChanged(newRoute?.settings.name);
+  // Deliberately no didRemove/didReplace: pushNamedAndRemoveUntil reports the
+  // routes it removed underneath the new tab, which used to reset the
+  // selection back to Home after the new route had already been pushed.
 }
 
 class _MainShellState extends State<MainShell> {

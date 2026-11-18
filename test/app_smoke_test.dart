@@ -16,7 +16,16 @@ void main() {
         reason: 'Home screen should render');
     expect(find.byType(NavigationBar), findsOneWidget);
 
-    for (final label in ['Generate', 'Saved', 'Logger', 'Pose', 'Home']) {
+    final tabs = <String, int>{
+      'Generate': 1,
+      'Saved': 2,
+      'Logger': 3,
+      'Pose': 4,
+      'Home': 0,
+    };
+
+    for (final entry in tabs.entries) {
+      final label = entry.key;
       final finder = find.widgetWithText(NavigationDestination, label);
       expect(finder, findsOneWidget, reason: 'Missing nav destination $label');
       await tester.tap(finder);
@@ -28,6 +37,15 @@ void main() {
       } else {
         await tester.pumpAndSettle();
       }
+
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is NavigationBar && widget.selectedIndex == entry.value,
+        ),
+        findsOneWidget,
+        reason: '$label should be the selected navigation destination',
+      );
     }
 
     expect(find.text('Exercise Catalog'), findsOneWidget,

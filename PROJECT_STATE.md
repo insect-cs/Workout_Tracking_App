@@ -319,6 +319,9 @@ flutter build web --release
   when the Pose screen opens, deduplicated concurrent model loads, and removed
   stale hidden `<video>` elements on source change/dispose. Also fixed a narrow
   Pose-screen preview-button overflow and extended the tab smoke test to Pose.
+- **What:** Fixed selected navigation icon reverting to Home by ignoring
+  intermediate `didRemove`/`didReplace` observer events from
+  `pushNamedAndRemoveUntil`; selection now follows only visible routes.
 - **Files:** `.vscode/launch.json` (new), `run_local.bat` (new), `README.md`,
   `lib/screens/main_shell.dart`, `lib/screens/pose_tracking_screen.dart`,
   `lib/web/web_pose_web.dart`.
