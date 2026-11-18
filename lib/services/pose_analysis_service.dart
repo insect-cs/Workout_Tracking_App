@@ -315,7 +315,8 @@ class PoseAnalysisService {
   }) async {
     if (_apiKey.isEmpty) {
       throw Exception(
-        'GEMINI_API_KEY is not configured. Pass it with '
+        'GEMINI_API_KEY is not configured. Run with '
+        '--dart-define-from-file=env.json or '
         '--dart-define=GEMINI_API_KEY=...',
       );
     }

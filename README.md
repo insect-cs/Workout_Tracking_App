@@ -33,6 +33,10 @@ flutter run --dart-define-from-file=env.json
 flutter build web --release --dart-define-from-file=env.json
 ```
 
+In VS Code, use the **workout_app (Chrome, local env)** launch configuration;
+it already passes `--dart-define-from-file=env.json`. On Windows you can also
+double-click `run_local.bat`.
+
 `env.json` (and other `.env`/secret files) is ignored by Git. Never commit real
 API keys or credentials. Restrict the key in Google AI Studio to the APIs this
 app uses.
