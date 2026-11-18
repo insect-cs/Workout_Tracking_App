@@ -16,11 +16,18 @@ void main() {
         reason: 'Home screen should render');
     expect(find.byType(NavigationBar), findsOneWidget);
 
-    for (final label in ['Generate', 'Saved', 'Logger', 'Home']) {
+    for (final label in ['Generate', 'Saved', 'Logger', 'Pose', 'Home']) {
       final finder = find.widgetWithText(NavigationDestination, label);
       expect(finder, findsOneWidget, reason: 'Missing nav destination $label');
       await tester.tap(finder);
-      await tester.pumpAndSettle();
+      if (label == 'Pose') {
+        // Pose screen has a repeating pulse animation, so pumpAndSettle never
+        // completes; a few bounded frames are enough to verify the route.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+      } else {
+        await tester.pumpAndSettle();
+      }
     }
 
     expect(find.text('Exercise Catalog'), findsOneWidget,

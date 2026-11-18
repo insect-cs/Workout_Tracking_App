@@ -58,6 +58,10 @@ class WebPoseService {
   /// URL of the picked video file on web (XFile.path).
   static void setVideoSource(String url) {
     if (_sourceUrl == url && _hiddenVideo != null) return;
+    // Replacing a source must not leave old video elements decoding in the
+    // background; that was an additional source of UI stalls after switching
+    // videos.
+    _hiddenVideo?.remove();
     _sourceUrl = url;
     final v = web.HTMLVideoElement();
     v.src = url;
@@ -96,10 +100,25 @@ class WebPoseService {
     } catch (_) {}
   }
 
-  static Future<bool> ensureInitialized() async {
-    if (_initialized) return true;
-    if (_failed) return false;
+  static Future<bool>? _initializationFuture;
 
+  /// Returns the shared initialization future so warm-up and the first video
+  /// frame can never load the model twice.
+  static Future<bool> ensureInitialized() {
+    if (_initialized) return Future<bool>.value(true);
+    if (_failed) return Future<bool>.value(false);
+
+    final pending = _initializationFuture;
+    if (pending != null) return pending;
+
+    final future = _initializePoseEngine();
+    _initializationFuture = future;
+    return future.whenComplete(() {
+      _initializationFuture = null;
+    });
+  }
+
+  static Future<bool> _initializePoseEngine() async {
     try {
       _lastStatus = 'Loading TensorFlow backend...';
       // Prefer WebGL but fall back to CPU (some browsers/VMs block WebGL,

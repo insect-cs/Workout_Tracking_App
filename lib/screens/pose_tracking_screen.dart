@@ -197,6 +197,10 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     _pulseAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    // Load TF.js / MoveNet while the user is still choosing media, so the
+    // first tracked video frame does not stall the UI for several seconds.
+    if (kIsWeb) unawaited(WebPoseService.ensureInitialized());
   }
 
   @override
@@ -206,6 +210,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     _videoPlayerController?.removeListener(_onVideoUpdate);
     _stopLiveTracking();
     _videoPlayerController?.dispose();
+    WebPoseService.clearVideoSource();
     super.dispose();
   }
 
@@ -235,6 +240,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
   Future<void> _pickImage() async {
     _videoPlayerController?.pause();
+    WebPoseService.clearVideoSource();
     try {
       final XFile? picked = await _picker.pickImage(
         source: ImageSource.gallery,
@@ -266,7 +272,20 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       );
       if (picked == null) return;
 
+      // Show progress before the (potentially slow) player initialization.
+      if (mounted) {
+        setState(() {
+          _isAnalyzing = true;
+          _error = null;
+          _videoTrackStatus = kIsWeb ? 'Loading video...' : null;
+        });
+      }
+
+      _videoPlayerController?.removeListener(_onVideoUpdate);
       _videoPlayerController?.dispose();
+      _videoPlayerController = null;
+      WebPoseService.clearVideoSource();
+
       final VideoPlayerController controller = kIsWeb
           ? VideoPlayerController.networkUrl(Uri.parse(picked.path))
           : VideoPlayerController.file(File(picked.path));
@@ -276,6 +295,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       controller.setLooping(false);
       controller.setVolume(0.0);
       controller.addListener(_onVideoUpdate);
+      _videoPlayerController = controller;
       controller.play();
 
       // On web, attach the picked file's blob URL to a hidden <video>
@@ -285,26 +305,38 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         WebPoseService.setVideoSource(picked.path);
       }
 
-      final bytes = await picked.readAsBytes();
-
+      // Video analysis is entirely local; reading the whole file into memory
+      // here used to stall the UI for seconds and was never used.
+      if (!mounted) return;
       setState(() {
         _selectedMediaFile = kIsWeb ? null : File(picked.path);
-        _selectedMediaBytes = bytes;
+        _selectedMediaBytes = null;
         _isVideo = true;
         _videoPlayerController = controller;
         _videoEnded = false;
         _analysisResult = null;
         _error = null;
         _liveKeypoints = const [];
+        _videoTrackStatus = kIsWeb
+            ? (WebPoseService.lastStatus ?? 'Starting pose tracking...')
+            : null;
         _resetLiveTrackingState();
       });
 
       await _analyzeCurrentMedia();
       // Start real-time landmark tracking on the playing video stream
-      _videoTrackStatus = null;
-      _startVideoFrameTracking();
+      if (mounted) _startVideoFrameTracking();
     } catch (e) {
-      setState(() => _error = 'Error loading video: $e');
+      _videoPlayerController?.removeListener(_onVideoUpdate);
+      _videoPlayerController?.dispose();
+      _videoPlayerController = null;
+      WebPoseService.clearVideoSource();
+      if (mounted) {
+        setState(() {
+          _isAnalyzing = false;
+          _error = 'Error loading video: $e';
+        });
+      }
     }
   }
 
@@ -349,6 +381,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
   Future<void> _takePhoto() async {
     _videoPlayerController?.pause();
+    WebPoseService.clearVideoSource();
     try {
       final XFile? picked = await _picker.pickImage(
         source: ImageSource.camera,
@@ -451,6 +484,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   void _stopLiveTrackingSession() {
     _stopLiveTracking();
     _stopVideoFrameTracking();
+    WebPoseService.clearVideoSource();
     setState(() {
       _isVideo = false;
       _selectedMediaFile = null;
@@ -800,6 +834,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   void _cycleDemoExercise() {
     _videoPlayerController?.pause();
     _stopVideoFrameTracking();
+    WebPoseService.clearVideoSource();
     final demo = _demoExercises[_demoIndex % _demoExercises.length];
     _demoIndex++;
     final kpList = demo['keypoints'] as List<PoseKeypoint>;
@@ -822,7 +857,13 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   }
 
   Future<void> _analyzeCurrentMedia() async {
-    if (_selectedMediaBytes == null && _selectedMediaFile == null) return;
+    // Web video paths are blob URLs with no local File; video analysis is
+    // local landmark tracking and does not need the raw bytes.
+    if (!_isVideo &&
+        _selectedMediaBytes == null &&
+        _selectedMediaFile == null) {
+      return;
+    }
 
     setState(() {
       _isAnalyzing = true;
@@ -2202,12 +2243,14 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                     size: 16,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    'Preview Demo Skeletal Models',
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primaryOrange,
+                  Flexible(
+                    child: Text(
+                      'Preview Demo Skeletal Models',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryOrange,
+                      ),
                     ),
                   ),
                 ],

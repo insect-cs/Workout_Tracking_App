@@ -56,7 +56,10 @@ class _MainShellState extends State<MainShell> {
 
   late final _RouteChangeObserver _observer;
 
-  int _selectedTab = 0;
+  // Only the NavigationBar listens to this, so route changes no longer rebuild
+  // the Navigator and its currently mounted screens.
+  final ValueNotifier<int> _selectedTab = ValueNotifier<int>(0);
+  String _currentRoute = homeRoute;
   String? _preselectedExercise;
 
   static const List<String> _tabs = [
@@ -90,9 +93,11 @@ class _MainShellState extends State<MainShell> {
     // built, so route-change callbacks must never call setState synchronously.
     // Always defer them to the end of the current frame.
     _observer = _RouteChangeObserver((route) {
-      final tab = _tabForRoute(route);
+      final routeName = route ?? homeRoute;
+      _currentRoute = routeName;
+      final tab = _tabForRoute(routeName);
       _updateAfterBuild(() {
-        if (_selectedTab != tab) setState(() => _selectedTab = tab);
+        if (_selectedTab.value != tab) _selectedTab.value = tab;
       });
     });
     _state.addListener(_handleStateChanged);
@@ -101,6 +106,7 @@ class _MainShellState extends State<MainShell> {
   @override
   void dispose() {
     _state.removeListener(_handleStateChanged);
+    _selectedTab.dispose();
     super.dispose();
   }
 
@@ -119,6 +125,7 @@ class _MainShellState extends State<MainShell> {
   /// Push a new screen on top of the current one (keeps Hero transitions).
   void _open(String route, {String? exercise}) {
     _preselectedExercise = exercise;
+    _currentRoute = route;
     _navigatorKey.currentState?.pushNamed(route);
   }
 
@@ -126,9 +133,22 @@ class _MainShellState extends State<MainShell> {
   void _switchTab(String route) {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
-    navigator.popUntil((r) => r.isFirst);
-    if (route != homeRoute) navigator.pushNamed(route);
-    setState(() => _selectedTab = _tabForRoute(route));
+
+    final previousRoute = _currentRoute;
+    _currentRoute = route;
+    _selectedTab.value = _tabForRoute(route);
+
+    // Already on this tab's root route - avoid a redundant route transition.
+    if (previousRoute == route) return;
+
+    if (route == homeRoute) {
+      navigator.popUntil((r) => r.isFirst);
+      return;
+    }
+
+    // Keeps home underneath and replaces any pushed routes in one transaction,
+    // instead of popping them one by one and then pushing the new tab.
+    navigator.pushNamedAndRemoveUntil(route, (r) => r.isFirst);
   }
 
   /// Reverse navigation (also reverses the Hero flight).
@@ -161,36 +181,42 @@ class _MainShellState extends State<MainShell> {
                     ),
                   ),
                 ),
-                NavigationBar(
-                  selectedIndex: _selectedTab,
-                  onDestinationSelected: (index) => _switchTab(_tabs[index]),
-                  destinations: const [
-                    NavigationDestination(
-                      icon: Icon(Icons.home_outlined),
-                      selectedIcon: Icon(Icons.home),
-                      label: 'Home',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.auto_awesome_outlined),
-                      selectedIcon: Icon(Icons.auto_awesome),
-                      label: 'Generate',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.bookmark_border),
-                      selectedIcon: Icon(Icons.bookmark),
-                      label: 'Saved',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.timer_outlined),
-                      selectedIcon: Icon(Icons.timer),
-                      label: 'Logger',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.accessibility_new_outlined),
-                      selectedIcon: Icon(Icons.accessibility_new),
-                      label: 'Pose',
-                    ),
-                  ],
+                ValueListenableBuilder<int>(
+                  valueListenable: _selectedTab,
+                  builder: (context, selectedIndex, _) {
+                    return NavigationBar(
+                      selectedIndex: selectedIndex,
+                      onDestinationSelected: (index) =>
+                          _switchTab(_tabs[index]),
+                      destinations: const [
+                        NavigationDestination(
+                          icon: Icon(Icons.home_outlined),
+                          selectedIcon: Icon(Icons.home),
+                          label: 'Home',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.auto_awesome_outlined),
+                          selectedIcon: Icon(Icons.auto_awesome),
+                          label: 'Generate',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.bookmark_border),
+                          selectedIcon: Icon(Icons.bookmark),
+                          label: 'Saved',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.timer_outlined),
+                          selectedIcon: Icon(Icons.timer),
+                          label: 'Logger',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.accessibility_new_outlined),
+                          selectedIcon: Icon(Icons.accessibility_new),
+                          label: 'Pose',
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),

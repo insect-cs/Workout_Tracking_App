@@ -310,6 +310,21 @@ flutter build web --release
 - **Result:** Real key kept only in local ignored `env.json`; no secrets staged.
   `flutter analyze --no-pub` clean; `flutter test` 2/2 passed.
 
+### 2026-11-18 — Local env launch + navigation/video performance
+- **What:** Added VS Code launch configs and `run_local.bat` so debugging passes
+  `--dart-define-from-file=env.json` automatically. Reduced tab-switch lag by
+  moving `NavigationBar` selection to a `ValueNotifier` (only the bar rebuilds)
+  and replacing pop-then-push with a single `pushNamedAndRemoveUntil`.
+- **What:** Removed the full-video `readAsBytes()` stall, preloaded TF.js/MoveNet
+  when the Pose screen opens, deduplicated concurrent model loads, and removed
+  stale hidden `<video>` elements on source change/dispose. Also fixed a narrow
+  Pose-screen preview-button overflow and extended the tab smoke test to Pose.
+- **Files:** `.vscode/launch.json` (new), `run_local.bat` (new), `README.md`,
+  `lib/screens/main_shell.dart`, `lib/screens/pose_tracking_screen.dart`,
+  `lib/web/web_pose_web.dart`.
+- **Result:** `flutter analyze --no-pub` clean; `flutter test` 2/2 passed;
+  `flutter build web --release --dart-define-from-file=env.json` success.
+
 ---
 
 ## 6. Gotchas / Lessons Learned
