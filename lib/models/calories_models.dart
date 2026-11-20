@@ -100,6 +100,14 @@ class CalorieProfile {
     'weightKg': weightKg,
     'activity': activity,
   };
+
+  factory CalorieProfile.fromJson(Map<String, dynamic> json) => CalorieProfile(
+    age: (json['age'] as num?)?.toInt() ?? 30,
+    gender: (json['gender'] as String?) ?? 'Male',
+    heightCm: (json['heightCm'] as num?)?.toDouble() ?? 175,
+    weightKg: (json['weightKg'] as num?)?.toDouble() ?? 70,
+    activity: (json['activity'] as String?) ?? CalorieMath.activityLevels.first,
+  );
 }
 
 class DayCalorieEstimate {
@@ -112,6 +120,19 @@ class DayCalorieEstimate {
     required this.calories,
     this.note = '',
   });
+
+  Map<String, dynamic> toJson() => {
+    'day': day,
+    'calories': calories,
+    'note': note,
+  };
+
+  factory DayCalorieEstimate.fromJson(Map<String, dynamic> json) =>
+      DayCalorieEstimate(
+        day: (json['day'] as String?) ?? '',
+        calories: (json['calories'] as num?)?.toInt() ?? 0,
+        note: (json['note'] as String?) ?? '',
+      );
 }
 
 class WeeklyCalorieEstimate {
@@ -138,6 +159,46 @@ class WeeklyCalorieEstimate {
     required this.tips,
     required this.createdAt,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'profile': profile.toJson(),
+    'bmr': bmr,
+    'tdee': tdee,
+    'dailyTarget': dailyTarget,
+    'weeklyTarget': weeklyTarget,
+    'summary': summary,
+    'days': days.map((day) => day.toJson()).toList(),
+    'tips': tips,
+    'createdAt': createdAt.toIso8601String(),
+  };
+
+  factory WeeklyCalorieEstimate.fromJson(Map<String, dynamic> json) =>
+      WeeklyCalorieEstimate(
+        id: (json['id'] as String?) ?? '',
+        profile: CalorieProfile.fromJson(
+          (json['profile'] as Map<String, dynamic>?) ?? const {},
+        ),
+        bmr: (json['bmr'] as num?)?.toInt() ?? 0,
+        tdee: (json['tdee'] as num?)?.toInt() ?? 0,
+        dailyTarget: (json['dailyTarget'] as num?)?.toInt() ?? 0,
+        weeklyTarget: (json['weeklyTarget'] as num?)?.toInt() ?? 0,
+        summary: (json['summary'] as String?) ?? '',
+        days:
+            (json['days'] as List<dynamic>?)
+                ?.whereType<Map<String, dynamic>>()
+                .map(DayCalorieEstimate.fromJson)
+                .toList() ??
+            const <DayCalorieEstimate>[],
+        tips:
+            (json['tips'] as List<dynamic>?)
+                ?.map((value) => value.toString())
+                .toList() ??
+            const <String>[],
+        createdAt:
+            DateTime.tryParse((json['createdAt'] as String?) ?? '') ??
+            DateTime.now(),
+      );
 }
 
 class BmiEstimate {
@@ -160,4 +221,34 @@ class BmiEstimate {
     required this.recommendations,
     required this.createdAt,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'profile': profile.toJson(),
+    'bmi': bmi,
+    'category': category,
+    'healthyWeightRange': healthyWeightRange,
+    'interpretation': interpretation,
+    'recommendations': recommendations,
+    'createdAt': createdAt.toIso8601String(),
+  };
+
+  factory BmiEstimate.fromJson(Map<String, dynamic> json) => BmiEstimate(
+    id: (json['id'] as String?) ?? '',
+    profile: CalorieProfile.fromJson(
+      (json['profile'] as Map<String, dynamic>?) ?? const {},
+    ),
+    bmi: (json['bmi'] as num?)?.toDouble() ?? 0,
+    category: (json['category'] as String?) ?? '',
+    healthyWeightRange: (json['healthyWeightRange'] as String?) ?? '',
+    interpretation: (json['interpretation'] as String?) ?? '',
+    recommendations:
+        (json['recommendations'] as List<dynamic>?)
+            ?.map((value) => value.toString())
+            .toList() ??
+        const <String>[],
+    createdAt:
+        DateTime.tryParse((json['createdAt'] as String?) ?? '') ??
+        DateTime.now(),
+  );
 }

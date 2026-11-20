@@ -1,4 +1,4 @@
-package com.example.workout_app
+package com.insectcs.workoutapp
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/calories_models.dart';
 import '../services/calories_service.dart';
+import '../services/local_store.dart';
 import '../theme/app_colors.dart';
 import '../widgets/api_key_dialog.dart';
 
@@ -25,6 +28,24 @@ class _CalorieFormData {
     heightController.dispose();
     weightController.dispose();
   }
+
+  Map<String, dynamic> toJson() => {
+    'age': ageController.text,
+    'height': heightController.text,
+    'weight': weightController.text,
+    'gender': gender,
+    'activity': activity,
+  };
+
+  void applyJson(Map<String, dynamic> json) {
+    ageController.text = (json['age'] as String?) ?? ageController.text;
+    heightController.text =
+        (json['height'] as String?) ?? heightController.text;
+    weightController.text =
+        (json['weight'] as String?) ?? weightController.text;
+    gender = (json['gender'] as String?) ?? gender;
+    activity = (json['activity'] as String?) ?? activity;
+  }
 }
 
 /// Calories section: weekly maintenance-calorie estimates (with activity
@@ -41,6 +62,10 @@ class CaloriesScreen extends StatefulWidget {
 
 class _CaloriesScreenState extends State<CaloriesScreen>
     with SingleTickerProviderStateMixin {
+  static const String _formKey = 'workout_app.calories_form.v1';
+  static const String _resultsKey = 'workout_app.calories_results.v1';
+  static const String _tabKey = 'workout_app.calories_tab.v1';
+
   late final TabController _tabController;
   final _CalorieFormData _form = _CalorieFormData();
 
@@ -63,13 +88,57 @@ class _CaloriesScreenState extends State<CaloriesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+
+    final savedForm = LocalStore.instance.readMap(_formKey);
+    if (savedForm != null) _form.applyJson(savedForm);
+
+    final savedResults = LocalStore.instance.readMap(_resultsKey);
+    if (savedResults != null) {
+      final weekly = savedResults['weekly'] as Map<String, dynamic>?;
+      final bmi = savedResults['bmi'] as Map<String, dynamic>?;
+      if (weekly != null) {
+        _weeklyResult = WeeklyCalorieEstimate.fromJson(weekly);
+      }
+      if (bmi != null) {
+        _bmiResult = BmiEstimate.fromJson(bmi);
+      }
+    }
+
+    final savedTab = LocalStore.instance.readInt(_tabKey);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: savedTab == 1 ? 1 : 0,
+    );
+    _lastTabIndex = _tabController.index;
     _tabController.addListener(() {
       if (_tabController.index != _lastTabIndex) {
         _lastTabIndex = _tabController.index;
+        unawaited(LocalStore.instance.write(_tabKey, _lastTabIndex));
         if (mounted) setState(() {});
       }
     });
+  }
+
+  void _persistForm() {
+    unawaited(LocalStore.instance.write(_formKey, _form.toJson()));
+  }
+
+  void _persistResults() {
+    unawaited(
+      LocalStore.instance.write(_resultsKey, {
+        if (_weeklyResult != null) 'weekly': _weeklyResult!.toJson(),
+        if (_bmiResult != null) 'bmi': _bmiResult!.toJson(),
+      }),
+    );
+  }
+
+  void _clearResults() {
+    setState(() {
+      _weeklyResult = null;
+      _bmiResult = null;
+    });
+    _persistResults();
   }
 
   @override
@@ -128,6 +197,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
           _weeklyResult = result;
           _isGenerating = false;
         });
+        _persistResults();
       } else {
         final result = await CaloriesService.generateBmiEstimate(profile);
         if (!mounted) return;
@@ -135,6 +205,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
           _bmiResult = result;
           _isGenerating = false;
         });
+        _persistResults();
       }
     } catch (e) {
       if (!mounted) return;
@@ -293,6 +364,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
           hint: 'e.g., 30',
           suffix: 'years',
           decimals: false,
+          onChanged: (_) => _persistForm(),
         ),
         const SizedBox(height: 18),
         _buildGenderSection(),
@@ -303,6 +375,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
           hint: 'e.g., 175',
           suffix: 'cm',
           decimals: true,
+          onChanged: (_) => _persistForm(),
         ),
         const SizedBox(height: 18),
         _buildNumberField(
@@ -311,6 +384,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
           hint: 'e.g., 70',
           suffix: 'kg',
           decimals: true,
+          onChanged: (_) => _persistForm(),
         ),
         if (showActivity) ...[
           const SizedBox(height: 18),
@@ -382,6 +456,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
     required String hint,
     required String suffix,
     required bool decimals,
+    required ValueChanged<String> onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -390,6 +465,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
         const SizedBox(height: 8),
         TextField(
           controller: controller,
+          onChanged: onChanged,
           keyboardType: decimals
               ? const TextInputType.numberWithOptions(decimal: true)
               : TextInputType.number,
@@ -426,6 +502,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
           onSelectionChanged: (selection) {
             if (selection.isNotEmpty) {
               setState(() => _form.gender = selection.first);
+              _persistForm();
             }
           },
         ),
@@ -470,7 +547,10 @@ class _CaloriesScreenState extends State<CaloriesScreen>
             ];
           },
           onChanged: (value) {
-            if (value != null) setState(() => _form.activity = value);
+            if (value != null) {
+              setState(() => _form.activity = value);
+              _persistForm();
+            }
           },
         ),
       ],
@@ -601,10 +681,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
             ),
             const Spacer(),
             IconButton(
-              onPressed: () => setState(() {
-                _weeklyResult = null;
-                _bmiResult = null;
-              }),
+              onPressed: _clearResults,
               tooltip: 'Edit details',
               icon: Icon(Icons.edit_outlined, color: AppColors.textSlate),
             ),
@@ -616,10 +693,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
           width: double.infinity,
           height: 48,
           child: OutlinedButton.icon(
-            onPressed: () => setState(() {
-              _weeklyResult = null;
-              _bmiResult = null;
-            }),
+            onPressed: _clearResults,
             icon: const Icon(Icons.refresh),
             label: Text(
               'Create another estimate',

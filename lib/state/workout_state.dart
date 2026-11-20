@@ -1,9 +1,26 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/workout_models.dart';
 import '../services/gemini_service.dart';
+import '../services/local_store.dart';
 
 class WorkoutState extends ChangeNotifier {
+  WorkoutState() {
+    _captureInitialData();
+  }
+
+  /// Shared instance used by the app shell. Additional instances (tests) read
+  /// the same device-local store but stay independently notifyable.
+  static final WorkoutState instance = WorkoutState._();
+
+  WorkoutState._() {
+    _captureInitialData();
+  }
+
+  static const String _storeKey = 'workout_app.workout_state.v1';
+
   int _selectedTabIndex = 0;
   int get selectedTabIndex => _selectedTabIndex;
 
@@ -19,9 +36,107 @@ class WorkoutState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Restores saved workouts, the active workout, logged sessions and the
+  /// selected tab from device-local storage. Safe to call more than once.
+  Future<void> ensureLoaded() async {
+    await LocalStore.instance.ensureLoaded();
+    final saved = LocalStore.instance.readMap(_storeKey);
+    if (saved == null) return;
+
+    final savedWorkouts = saved['savedWorkouts'] as List<dynamic>?;
+    if (savedWorkouts != null) {
+      _savedWorkouts = savedWorkouts
+          .whereType<Map<String, dynamic>>()
+          .map(WorkoutModel.fromJson)
+          .toList();
+    }
+
+    final current = saved['currentWorkout'] as Map<String, dynamic>?;
+    if (current != null) _currentWorkout = WorkoutModel.fromJson(current);
+
+    final logs = saved['exerciseLogs'] as List<dynamic>?;
+    if (logs != null) {
+      _exerciseLogs = logs
+          .whereType<Map<String, dynamic>>()
+          .map(WorkoutSessionLog.fromJson)
+          .toList();
+    }
+
+    final tab = (saved['selectedTabIndex'] as num?)?.toInt();
+    if (tab != null) _selectedTabIndex = tab;
+    notifyListeners();
+  }
+
+  Future<void> _persist() {
+    return LocalStore.instance.write(_storeKey, {
+      'savedWorkouts': _savedWorkouts
+          .map((workout) => workout.toJson())
+          .toList(),
+      'currentWorkout': _currentWorkout.toJson(),
+      'exerciseLogs': _exerciseLogs.map((log) => log.toJson()).toList(),
+      'selectedTabIndex': _selectedTabIndex,
+    });
+  }
+
+  /// Writes the original demo workouts/logs into the active namespace once.
+  /// Used only by the guest profile.
+  Future<void> ensureSeeded() async {
+    await LocalStore.instance.ensureLoaded();
+    if (LocalStore.instance.readMap(_storeKey) != null) return;
+    _savedWorkouts = List<WorkoutModel>.from(_initialSavedWorkouts);
+    _currentWorkout = _initialCurrentWorkout;
+    _exerciseLogs = List<WorkoutSessionLog>.from(_initialExerciseLogs);
+    _selectedTabIndex = 0;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// Replaces in-memory state with the active session's stored data.
+  ///
+  /// Guest sessions fall back to the preloaded test data; new-user sessions
+  /// start empty. Any saved values in the selected namespace win either way.
+  Future<void> reload({required bool withDemoData}) async {
+    await LocalStore.instance.ensureLoaded();
+    _savedWorkouts = withDemoData
+        ? List<WorkoutModel>.from(_initialSavedWorkouts)
+        : <WorkoutModel>[];
+    _currentWorkout = withDemoData ? _initialCurrentWorkout : _emptyWorkout;
+    _exerciseLogs = withDemoData
+        ? List<WorkoutSessionLog>.from(_initialExerciseLogs)
+        : <WorkoutSessionLog>[];
+    _selectedTabIndex = 0;
+
+    final saved = LocalStore.instance.readMap(_storeKey);
+    if (saved != null) {
+      final savedWorkouts = saved['savedWorkouts'] as List<dynamic>?;
+      if (savedWorkouts != null) {
+        _savedWorkouts = savedWorkouts
+            .whereType<Map<String, dynamic>>()
+            .map(WorkoutModel.fromJson)
+            .toList();
+      }
+
+      final current = saved['currentWorkout'] as Map<String, dynamic>?;
+      if (current != null) _currentWorkout = WorkoutModel.fromJson(current);
+
+      final logs = saved['exerciseLogs'] as List<dynamic>?;
+      if (logs != null) {
+        _exerciseLogs = logs
+            .whereType<Map<String, dynamic>>()
+            .map(WorkoutSessionLog.fromJson)
+            .toList();
+      }
+
+      final tab = (saved['selectedTabIndex'] as num?)?.toInt();
+      if (tab != null) _selectedTabIndex = tab;
+    }
+    notifyListeners();
+  }
+
   void selectTab(int index) {
     if (_selectedTabIndex != index) {
       _selectedTabIndex = index;
+      unawaited(_persist());
       notifyListeners();
     }
   }
@@ -156,7 +271,7 @@ class WorkoutState extends ChangeNotifier {
   ];
 
   // Saved workouts list
-  final List<WorkoutModel> _savedWorkouts = [
+  List<WorkoutModel> _savedWorkouts = [
     const WorkoutModel(
       id: "w-1",
       name: "Explosive Push & Delts",
@@ -393,6 +508,7 @@ class WorkoutState extends ChangeNotifier {
 
   void setCurrentWorkout(WorkoutModel workout) {
     _currentWorkout = workout;
+    unawaited(_persist());
     notifyListeners();
   }
 
@@ -400,11 +516,13 @@ class WorkoutState extends ChangeNotifier {
     // Avoid duplicates by ID
     _savedWorkouts.removeWhere((w) => w.id == workout.id);
     _savedWorkouts.insert(0, workout);
+    unawaited(_persist());
     notifyListeners();
   }
 
   void deleteWorkout(String id) {
     _savedWorkouts.removeWhere((w) => w.id == id);
+    unawaited(_persist());
     notifyListeners();
   }
 
@@ -431,6 +549,7 @@ class WorkoutState extends ChangeNotifier {
       );
       _currentWorkout = workout;
       _isGenerating = false;
+      unawaited(_persist());
       notifyListeners();
       return true;
     } catch (e) {
@@ -476,11 +595,12 @@ class WorkoutState extends ChangeNotifier {
       date: "Just generated",
       exercises: selectedExercises,
     );
+    unawaited(_persist());
     notifyListeners();
   }
 
   // ── Exercise Logger with Timers ──────────────────────────────────────────
-  final List<WorkoutSessionLog> _exerciseLogs = [
+  List<WorkoutSessionLog> _exerciseLogs = [
     WorkoutSessionLog(
       id: 'log-1',
       exerciseName: 'Incline Dumbbell Press',
@@ -683,20 +803,45 @@ class WorkoutState extends ChangeNotifier {
     ),
   ];
 
+  // Pristine copies of the preloaded test data. These are restored whenever the
+  // guest profile is selected, and never copied into a new-user session.
+  late final List<WorkoutModel> _initialSavedWorkouts;
+  late final WorkoutModel _initialCurrentWorkout;
+  late final List<WorkoutSessionLog> _initialExerciseLogs;
+
+  static const WorkoutModel _emptyWorkout = WorkoutModel(
+    id: '',
+    name: '',
+    focus: '',
+    duration: '',
+    difficulty: '',
+    date: '',
+    exercises: [],
+  );
+
+  void _captureInitialData() {
+    _initialSavedWorkouts = List<WorkoutModel>.unmodifiable(_savedWorkouts);
+    _initialCurrentWorkout = _currentWorkout;
+    _initialExerciseLogs = List<WorkoutSessionLog>.unmodifiable(_exerciseLogs);
+  }
+
   List<WorkoutSessionLog> get exerciseLogs => List.unmodifiable(_exerciseLogs);
 
   void addExerciseLog(WorkoutSessionLog log) {
     _exerciseLogs.insert(0, log);
+    unawaited(_persist());
     notifyListeners();
   }
 
   void deleteExerciseLog(String id) {
     _exerciseLogs.removeWhere((l) => l.id == id);
+    unawaited(_persist());
     notifyListeners();
   }
 
   void clearExerciseLogs() {
     _exerciseLogs.clear();
+    unawaited(_persist());
     notifyListeners();
   }
 }

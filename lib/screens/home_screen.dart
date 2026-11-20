@@ -13,6 +13,7 @@ class HomeScreen extends StatefulWidget {
   final Function(String?) onNavigateToInput;
   final VoidCallback onOpenDiet;
   final VoidCallback onOpenKeys;
+  final VoidCallback? onSignOut;
 
   const HomeScreen({
     super.key,
@@ -21,6 +22,7 @@ class HomeScreen extends StatefulWidget {
     required this.onNavigateToInput,
     required this.onOpenDiet,
     required this.onOpenKeys,
+    this.onSignOut,
   });
 
   @override
@@ -271,6 +273,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+
+          // Sign out returns to the login gate but keeps the session on disk
+          // until the delete icon there is used.
+          if (widget.onSignOut != null)
+            IconButton(
+              onPressed: widget.onSignOut,
+              tooltip: 'Sign out',
+              icon: Icon(Icons.logout, color: AppColors.rose, size: 20),
+            ),
         ],
       ),
     );

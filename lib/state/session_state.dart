@@ -1,0 +1,123 @@
+import 'package:flutter/foundation.dart';
+
+import '../services/api_key_service.dart';
+import '../services/local_store.dart';
+import '../theme/theme_controller.dart';
+import 'diet_state.dart';
+import 'guest_seed.dart';
+import 'workout_state.dart';
+
+enum SessionKind { guest, newUser }
+
+String _storageName(SessionKind kind) => kind == SessionKind.guest
+    ? LocalStore.guestNamespace
+    : LocalStore.newUserNamespace;
+
+SessionKind? _kindFromStorage(Object? value) {
+  if (value == LocalStore.guestNamespace) return SessionKind.guest;
+  if (value == LocalStore.newUserNamespace) return SessionKind.newUser;
+  return null;
+}
+
+/// Enforces the app's single-user rule.
+///
+/// Exactly one session may exist on the device. A signed-out session remains
+/// on disk (so the login screen can offer to delete it), and only after it is
+/// deleted can a different guest or new-user session be created.
+abstract final class SessionState {
+  static final ValueNotifier<SessionKind?> kind = ValueNotifier<SessionKind?>(
+    null,
+  );
+  static final ValueNotifier<bool> signedIn = ValueNotifier<bool>(false);
+
+  static Map<String, dynamic>? _session;
+
+  static bool get hasSession => _session != null;
+  static bool get isSignedIn => signedIn.value;
+  static bool get canSignIn => _session == null;
+
+  static Future<void> ensureLoaded() async {
+    await LocalStore.instance.ensureLoaded();
+    _session = LocalStore.instance.readGlobalMap(LocalStore.sessionKey);
+    final restored = _kindFromStorage(_session?['kind']);
+    LocalStore.instance.setNamespace(
+      restored == null ? LocalStore.guestNamespace : _storageName(restored),
+    );
+    kind.value = restored;
+    signedIn.value = _session?['signedIn'] == true;
+  }
+
+  /// Creates the only allowed session. Returns false if one already exists.
+  static Future<bool> signIn(SessionKind selected) async {
+    if (_session != null) return false;
+
+    final namespace = _storageName(selected);
+    final otherNamespace = selected == SessionKind.guest
+        ? LocalStore.newUserNamespace
+        : LocalStore.guestNamespace;
+
+    // Only one profile's data may exist at a time.
+    await LocalStore.instance.deleteNamespace(otherNamespace);
+    if (selected == SessionKind.newUser) {
+      await LocalStore.instance.deleteNamespace(namespace);
+      await ApiKeyStore.instance.clear();
+    }
+
+    LocalStore.instance.setNamespace(namespace);
+    if (selected == SessionKind.guest) {
+      await GuestSeed.ensureSeeded();
+    }
+    await _reloadAppState(selected);
+
+    _session = {
+      'kind': namespace,
+      'signedIn': true,
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+    await LocalStore.instance.writeGlobal(LocalStore.sessionKey, _session);
+    kind.value = selected;
+    signedIn.value = true;
+    await LocalStore.instance.flush();
+    return true;
+  }
+
+  /// Keeps the session on disk but returns the app to the login gate.
+  static Future<void> signOut() async {
+    if (_session == null) return;
+    _session = {..._session!, 'signedIn': false};
+    await LocalStore.instance.writeGlobal(LocalStore.sessionKey, _session);
+    signedIn.value = false;
+    await LocalStore.instance.flush();
+  }
+
+  /// Permanently removes the only session and all of its local data.
+  static Future<void> deleteSession() async {
+    if (_session == null) return;
+    await LocalStore.instance.deleteNamespace(LocalStore.guestNamespace);
+    await LocalStore.instance.deleteNamespace(LocalStore.newUserNamespace);
+    await ApiKeyStore.instance.clear();
+    await LocalStore.instance.deleteGlobal(LocalStore.sessionKey);
+    _session = null;
+    kind.value = null;
+    signedIn.value = false;
+    LocalStore.instance.setNamespace(LocalStore.guestNamespace);
+    await LocalStore.instance.flush();
+  }
+
+  static Future<void> _reloadAppState(SessionKind selected) async {
+    await Future.wait([
+      WorkoutState.instance.reload(withDemoData: selected == SessionKind.guest),
+      DietState.instance.reload(),
+      ThemeController.reload(),
+      ApiKeyStore.instance.ensureLoaded(),
+    ]);
+  }
+
+  /// Test helper: clears notifiers without touching persisted data.
+  static void resetForTesting() {
+    _session = null;
+    kind.value = null;
+    signedIn.value = false;
+    LocalStore.instance.setNamespace(LocalStore.guestNamespace);
+  }
+}

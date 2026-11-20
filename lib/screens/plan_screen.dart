@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/plan_models.dart';
 import '../models/workout_models.dart';
+import '../services/local_store.dart';
+import '../services/plan_history_service.dart';
 import '../services/plan_service.dart';
 import '../services/youtube_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/api_key_dialog.dart';
+import '../widgets/app_dialog.dart';
 
 /// Extracts the 11-character video id from a YouTube watch/embed/shorts URL.
 /// Returns null for search URLs or anything that is not a direct video link.
@@ -72,6 +77,35 @@ class _PlanFormData {
     exerciseCombination: effectiveCombination,
     dayLabel: isWeekly ? null : 'Day $singleDayIndex',
   );
+
+  Map<String, dynamic> toJson() => {
+    'goal': goal,
+    'experienceLevel': experienceLevel,
+    'equipment': equipment,
+    'daysPerWeek': daysPerWeek,
+    'singleDayIndex': singleDayIndex,
+    'combination': combination,
+    'customCombination': customCombinationController.text,
+    'exerciseTypes': exerciseTypes.toList(),
+  };
+
+  void applyJson(Map<String, dynamic> json) {
+    goal = (json['goal'] as String?) ?? goal;
+    experienceLevel = (json['experienceLevel'] as String?) ?? experienceLevel;
+    equipment = (json['equipment'] as String?) ?? equipment;
+    daysPerWeek = (json['daysPerWeek'] as num?)?.toInt() ?? daysPerWeek;
+    singleDayIndex =
+        (json['singleDayIndex'] as num?)?.toInt() ?? singleDayIndex;
+    combination = (json['combination'] as String?) ?? combination;
+    customCombinationController.text =
+        (json['customCombination'] as String?) ?? '';
+    final types = json['exerciseTypes'] as List<dynamic>?;
+    if (types != null) {
+      exerciseTypes
+        ..clear()
+        ..addAll(types.map((value) => value.toString()));
+    }
+  }
 }
 
 /// The Plan section: collect training preferences, then generate a weekly or
@@ -88,6 +122,10 @@ class PlanScreen extends StatefulWidget {
 
 class _PlanScreenState extends State<PlanScreen>
     with SingleTickerProviderStateMixin {
+  static const String _formsKey = 'workout_app.plan_forms.v1';
+  static const String _planKey = 'workout_app.plan_result.v1';
+  static const String _tabKey = 'workout_app.plan_tab.v1';
+
   late final TabController _tabController;
 
   final _PlanFormData _weeklyForm = _PlanFormData(isWeekly: true);
@@ -96,6 +134,8 @@ class _PlanScreenState extends State<PlanScreen>
   bool _isGenerating = false;
   String? _error;
   GeneratedPlan? _generatedPlan;
+  List<SavedPlanEntry> _history = const <SavedPlanEntry>[];
+  int _formTabIndex = 0;
   int _lastTabIndex = 0;
 
   static const List<String> _goals = [
@@ -131,12 +171,145 @@ class _PlanScreenState extends State<PlanScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+
+    final forms = LocalStore.instance.readMap(_formsKey);
+    final weekly = forms?['weekly'] as Map<String, dynamic>?;
+    final single = forms?['single'] as Map<String, dynamic>?;
+    if (weekly != null) _weeklyForm.applyJson(weekly);
+    if (single != null) _singleForm.applyJson(single);
+
+    final savedPlan = LocalStore.instance.readMap(_planKey);
+    if (savedPlan != null) _generatedPlan = GeneratedPlan.fromJson(savedPlan);
+
+    _history = PlanHistoryStore.read();
+
+    final savedTab = LocalStore.instance.readInt(_tabKey) ?? 0;
+    final initialTab = savedTab >= 0 && savedTab <= 2 ? savedTab : 0;
+    _formTabIndex = initialTab == 1 ? 1 : 0;
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: initialTab,
+    );
+    _lastTabIndex = _tabController.index;
     _tabController.addListener(() {
       if (_tabController.index != _lastTabIndex) {
         _lastTabIndex = _tabController.index;
+        // History is not a form: keep the last selected generator tab so the
+        // CTA label and scope do not change when the user visits History.
+        if (_lastTabIndex != 2) _formTabIndex = _lastTabIndex;
+        unawaited(LocalStore.instance.write(_tabKey, _lastTabIndex));
         if (mounted) setState(() {});
       }
+    });
+  }
+
+  void _persistForms() {
+    unawaited(
+      LocalStore.instance.write(_formsKey, {
+        'weekly': _weeklyForm.toJson(),
+        'single': _singleForm.toJson(),
+      }),
+    );
+  }
+
+  void _persistPlan() {
+    unawaited(LocalStore.instance.write(_planKey, _generatedPlan?.toJson()));
+  }
+
+  void _clearPlan() {
+    setState(() => _generatedPlan = null);
+    _persistPlan();
+  }
+
+  bool get _isCurrentPlanSaved =>
+      _generatedPlan != null &&
+      _history.any((entry) => entry.plan.id == _generatedPlan!.id);
+
+  Future<void> _savePlanToHistory() async {
+    final plan = _generatedPlan;
+    if (plan == null || _isCurrentPlanSaved) return;
+
+    final entry = await PlanHistoryStore.save(plan);
+    if (!mounted) return;
+
+    setState(() {
+      _history = <SavedPlanEntry>[
+        entry,
+        ..._history.where((existing) => existing.id != entry.id),
+      ];
+    });
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.cardSurface,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: AppColors.emerald),
+        ),
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: AppColors.emerald, size: 20),
+            const SizedBox(width: 10),
+            Text(
+              'Plan saved to History',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textWhite,
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _openHistoryFromResult() {
+    _clearPlan();
+    _tabController.animateTo(2);
+  }
+
+  void _openSavedPlan(SavedPlanEntry entry) {
+    setState(() => _generatedPlan = entry.plan);
+    _persistPlan();
+  }
+
+  Future<void> _confirmDeleteSavedPlan(SavedPlanEntry entry) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        backgroundColor: AppColors.cardSurface,
+        title: Text(
+          'Delete saved plan?',
+          style: GoogleFonts.spaceGrotesk(
+            fontWeight: FontWeight.bold,
+            color: AppColors.textWhite,
+          ),
+        ),
+        content: Text(
+          '“${entry.plan.title}” will be removed from Plan History.',
+          style: GoogleFonts.inter(color: AppColors.textSlate),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await PlanHistoryStore.remove(entry.id);
+    if (!mounted) return;
+    setState(() {
+      _history = _history.where((saved) => saved.id != entry.id).toList();
     });
   }
 
@@ -148,7 +321,11 @@ class _PlanScreenState extends State<PlanScreen>
     super.dispose();
   }
 
-  bool get _isWeekly => _tabController.index == 0;
+  bool get _isWeekly => _formTabIndex == 0;
+
+  bool get _isHistoryTab => !_hasResult && _tabController.index == 2;
+
+  bool get _hasResult => _generatedPlan != null;
 
   _PlanFormData get _activeForm => _isWeekly ? _weeklyForm : _singleForm;
 
@@ -182,6 +359,7 @@ class _PlanScreenState extends State<PlanScreen>
         _generatedPlan = plan;
         _isGenerating = false;
       });
+      _persistPlan();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -202,19 +380,20 @@ class _PlanScreenState extends State<PlanScreen>
             child: Column(
               children: [
                 _buildHeader(),
-                if (_generatedPlan == null) _buildTabBar(),
+                if (!_hasResult) _buildTabBar(),
                 Expanded(
-                  child: _generatedPlan != null
+                  child: _hasResult
                       ? _buildResultView(_generatedPlan!)
                       : TabBarView(
                           controller: _tabController,
                           children: [
                             _buildPlanForm(_weeklyForm),
                             _buildPlanForm(_singleForm),
+                            _buildHistoryView(),
                           ],
                         ),
                 ),
-                if (_generatedPlan == null) _buildBottomBar(),
+                if (!_hasResult && !_isHistoryTab) _buildBottomBar(),
               ],
             ),
           ),
@@ -319,9 +498,211 @@ class _PlanScreenState extends State<PlanScreen>
         tabs: const [
           Tab(text: 'Weekly'),
           Tab(text: 'Single day'),
+          Tab(icon: Icon(Icons.history, size: 18), text: 'History'),
         ],
       ),
     );
+  }
+
+  Widget _buildHistoryView() {
+    if (_history.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+        children: [
+          const SizedBox(height: 36),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppColors.cardSurface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.orangeSoft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    Icons.history_toggle_off,
+                    color: AppColors.primaryOrange,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'No saved plans yet',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textWhite,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Generate a weekly or single-day plan, then tap '
+                  '“Save to History” at the end of the result.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.textSlate,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+      children: [
+        Row(
+          children: [
+            Icon(Icons.history, color: AppColors.primaryOrange, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              'SAVED PLANS',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+                color: AppColors.textWhite,
+              ),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.orangeSoft,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.orangeBorder),
+              ),
+              child: Text(
+                '${_history.length}',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaryOrange,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        for (final entry in _history) _buildHistoryCard(entry),
+      ],
+    );
+  }
+
+  Widget _buildHistoryCard(SavedPlanEntry entry) {
+    final plan = entry.plan;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.orangeSoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  plan.isWeekly ? Icons.calendar_month : Icons.calendar_today,
+                  color: AppColors.primaryOrange,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      plan.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textWhite,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      plan.isWeekly ? 'Weekly plan' : 'Single-day plan',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primaryOrange,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: () => _confirmDeleteSavedPlan(entry),
+                tooltip: 'Delete saved plan',
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: AppColors.rose,
+                  size: 20,
+                ),
+              ),
+            ],
+          ),
+          if (plan.overview.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              plan.overview,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: AppColors.textSlate,
+                height: 1.4,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            'Saved ${_formatSavedAt(entry.savedAt)}',
+            style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSlate),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _openSavedPlan(entry),
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Open saved plan'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatSavedAt(DateTime value) {
+    String two(int part) => part.toString().padLeft(2, '0');
+    return '${value.year}-${two(value.month)}-${two(value.day)} '
+        '${two(value.hour)}:${two(value.minute)}';
   }
 
   Widget _buildPlanForm(_PlanFormData data) {
@@ -412,7 +793,10 @@ class _PlanScreenState extends State<PlanScreen>
                 label: Text(goal),
                 selected: data.goal == goal,
                 showCheckmark: false,
-                onSelected: (_) => setState(() => data.goal = goal),
+                onSelected: (_) {
+                  setState(() => data.goal = goal);
+                  _persistForms();
+                },
               ),
           ],
         ),
@@ -435,6 +819,7 @@ class _PlanScreenState extends State<PlanScreen>
           onSelectionChanged: (selection) {
             if (selection.isNotEmpty) {
               setState(() => data.experienceLevel = selection.first);
+              _persistForms();
             }
           },
         ),
@@ -460,7 +845,10 @@ class _PlanScreenState extends State<PlanScreen>
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: InkWell(
-              onTap: () => setState(() => data.equipment = option),
+              onTap: () {
+                setState(() => data.equipment = option);
+                _persistForms();
+              },
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 padding: const EdgeInsets.symmetric(
@@ -586,6 +974,7 @@ class _PlanScreenState extends State<PlanScreen>
                   label: '${data.daysPerWeek} days',
                   onChanged: (value) {
                     setState(() => data.daysPerWeek = value.round());
+                    _persistForms();
                   },
                 ),
               ),
@@ -603,6 +992,7 @@ class _PlanScreenState extends State<PlanScreen>
                   showCheckmark: false,
                   onSelected: (_) {
                     setState(() => data.singleDayIndex = day);
+                    _persistForms();
                   },
                 ),
             ],
@@ -640,6 +1030,7 @@ class _PlanScreenState extends State<PlanScreen>
                       data.exerciseTypes.remove(type);
                     }
                   });
+                  _persistForms();
                 },
               ),
           ],
@@ -673,6 +1064,7 @@ class _PlanScreenState extends State<PlanScreen>
                   setState(() {
                     data.combination = data.combination == option ? '' : option;
                   });
+                  _persistForms();
                 },
               ),
           ],
@@ -681,7 +1073,10 @@ class _PlanScreenState extends State<PlanScreen>
           const SizedBox(height: 12),
           TextField(
             controller: data.customCombinationController,
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) {
+              setState(() {});
+              _persistForms();
+            },
             decoration: InputDecoration(
               hintText: 'e.g., Chest+Triceps+Core',
               prefixIcon: Icon(
@@ -836,7 +1231,7 @@ class _PlanScreenState extends State<PlanScreen>
             ),
             const Spacer(),
             IconButton(
-              onPressed: () => setState(() => _generatedPlan = null),
+              onPressed: _clearPlan,
               tooltip: 'Edit plan details',
               icon: Icon(Icons.edit_outlined, color: AppColors.textSlate),
             ),
@@ -885,8 +1280,38 @@ class _PlanScreenState extends State<PlanScreen>
         SizedBox(
           width: double.infinity,
           height: 48,
+          child: FilledButton.icon(
+            onPressed: _isCurrentPlanSaved ? null : _savePlanToHistory,
+            icon: Icon(
+              _isCurrentPlanSaved ? Icons.check_circle : Icons.bookmark_add,
+              size: 18,
+            ),
+            label: Text(
+              _isCurrentPlanSaved ? 'Saved to History' : 'Save to History',
+              style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        if (_isCurrentPlanSaved) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: _openHistoryFromResult,
+              icon: const Icon(Icons.history, size: 16),
+              label: Text(
+                'View History',
+                style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
           child: OutlinedButton.icon(
-            onPressed: () => setState(() => _generatedPlan = null),
+            onPressed: _clearPlan,
             icon: const Icon(Icons.refresh),
             label: Text(
               'Create another plan',

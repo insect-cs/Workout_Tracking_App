@@ -126,12 +126,10 @@ class ApiKeyEntry {
   final AiEndpoint endpoint;
   final DateTime createdAt;
 
-  String get maskedKey {
-    if (key.isEmpty) return '';
-    if (key.length <= 8) return '•' * key.length;
-    return '${key.substring(0, 4)}${'•' * (key.length - 8)}'
-        '${key.substring(key.length - 4)}';
-  }
+  /// A fixed-width mask that reveals neither characters nor key length.
+  static const String _fullMask = '••••••••••••';
+
+  String get maskedKey => key.isEmpty ? '' : _fullMask;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -423,6 +421,24 @@ class ApiKeyStore with ChangeNotifier {
       _activeId = _entries.isNotEmpty ? _entries.first.id : null;
     }
     await _persist();
+  }
+
+  /// Removes every saved key when a local session is deleted.
+  Future<void> clear() async {
+    await ensureLoaded();
+    _entries = <ApiKeyEntry>[];
+    _activeId = null;
+    _memory.remove(_entriesKey);
+    _memory.remove(_activeIdKey);
+    if (!_testMode) {
+      try {
+        await _storage.delete(key: _entriesKey);
+        await _storage.delete(key: _activeIdKey);
+      } catch (e) {
+        debugPrint('Could not clear AI keys from secure storage: $e');
+      }
+    }
+    notifyListeners();
   }
 
   /// Test-only: disables the plugin and clears all in-memory keys.

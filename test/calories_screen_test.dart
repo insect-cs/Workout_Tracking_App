@@ -3,9 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:workout_app/models/calories_models.dart';
 import 'package:workout_app/screens/calories_screen.dart';
 import 'package:workout_app/services/api_key_service.dart';
+import 'package:workout_app/services/local_store.dart';
 
 void main() {
-  setUp(() => ApiKeyStore.instance.resetForTesting());
+  setUp(() async {
+    await ApiKeyStore.instance.resetForTesting();
+    await LocalStore.instance.resetForTesting();
+  });
 
   testWidgets('Calories weekly form shows all inputs and the estimate CTA', (
     tester,

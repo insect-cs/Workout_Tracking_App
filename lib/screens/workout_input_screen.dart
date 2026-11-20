@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../services/local_store.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_hero_tags.dart';
 import '../state/workout_state.dart';
@@ -25,6 +28,8 @@ class WorkoutInputScreen extends StatefulWidget {
 }
 
 class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
+  static const String _draftKey = 'workout_app.workout_input_draft.v1';
+
   late TextEditingController _nameController;
   final Set<String> _selectedMuscles = {'Chest', 'Shoulders'};
   String _selectedDuration = '45 min';
@@ -49,6 +54,38 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
         ? "${widget.initialExercise} Focused Routine"
         : "Explosive Push & Delts";
     _nameController = TextEditingController(text: initName);
+
+    if (widget.initialExercise == null) {
+      final draft = LocalStore.instance.readMap(_draftKey);
+      if (draft != null) {
+        _nameController.text = (draft['name'] as String?) ?? initName;
+        final muscles = draft['muscles'] as List<dynamic>?;
+        if (muscles != null) {
+          _selectedMuscles
+            ..clear()
+            ..addAll(muscles.map((value) => value.toString()));
+        }
+        _selectedDuration = (draft['duration'] as String?) ?? _selectedDuration;
+        _selectedDifficulty =
+            (draft['difficulty'] as String?) ?? _selectedDifficulty;
+        _selectedEquipment =
+            (draft['equipment'] as String?) ?? _selectedEquipment;
+        _nameIdx = (draft['nameIdx'] as num?)?.toInt() ?? _nameIdx;
+      }
+    }
+  }
+
+  void _persistDraft() {
+    unawaited(
+      LocalStore.instance.write(_draftKey, {
+        'name': _nameController.text,
+        'muscles': _selectedMuscles.toList(),
+        'duration': _selectedDuration,
+        'difficulty': _selectedDifficulty,
+        'equipment': _selectedEquipment,
+        'nameIdx': _nameIdx,
+      }),
+    );
   }
 
   @override
@@ -62,6 +99,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
       _nameIdx = (_nameIdx + 1) % _suggestedNames.length;
       _nameController.text = _suggestedNames[_nameIdx];
     });
+    _persistDraft();
   }
 
   @override
@@ -308,6 +346,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
           alignment: Alignment.centerLeft,
           child: TextField(
             controller: _nameController,
+            onChanged: (_) => _persistDraft(),
             style: GoogleFonts.inter(
               color: AppColors.textWhite,
               fontSize: 14,
@@ -405,6 +444,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
                     _selectedMuscles.add(muscle);
                   }
                 });
+                _persistDraft();
               },
             );
           },
@@ -441,6 +481,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
           onSelectionChanged: (selection) {
             if (selection.isNotEmpty) {
               setState(() => _selectedDuration = selection.first);
+              _persistDraft();
             }
           },
         ),
@@ -482,6 +523,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
                     setState(() {
                       _selectedDifficulty = name;
                     });
+                    _persistDraft();
                   },
                   borderRadius: BorderRadius.circular(10),
                   child: Container(
@@ -569,6 +611,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
                 setState(() {
                   _selectedEquipment = eq['id'] as String;
                 });
+                _persistDraft();
               },
               borderRadius: BorderRadius.circular(12),
               child: Container(
@@ -676,6 +719,7 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
                         ? 'Explosive Push & Delts'
                         : _nameController.text.trim();
 
+                    _persistDraft();
                     final success = await widget.state.generateWorkoutFromAI(
                       name: name,
                       muscles: _selectedMuscles.toList(),

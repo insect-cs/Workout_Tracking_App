@@ -52,25 +52,25 @@ void main() {
     expect(geminiHeaders(secret)['x-goog-api-key'], secret);
   });
 
-  test('keys are masked but reveal their first and last four characters', () {
+  test('keys are fully masked with no characters or length leaked', () {
     final entry = ApiKeyEntry(
       id: 'k1',
       key: 'AIzaSyAbCdEfGh1234567890',
       endpoint: AiEndpoint.presets.first,
       createdAt: DateTime(2026, 1, 1),
     );
-    expect(entry.maskedKey, startsWith('AIza'));
-    expect(entry.maskedKey, endsWith('7890'));
-    expect(entry.maskedKey, contains('•'));
-    expect(entry.maskedKey.length, entry.key.length);
-
     final short = ApiKeyEntry(
       id: 'k2',
       key: 'short',
       endpoint: AiEndpoint.presets.first,
       createdAt: DateTime(2026, 1, 1),
     );
-    expect(short.maskedKey, '•••••');
+
+    expect(entry.maskedKey, '••••••••••••');
+    expect(short.maskedKey, entry.maskedKey);
+    expect(entry.maskedKey, isNot(contains('AIza')));
+    expect(entry.maskedKey, isNot(contains('7890')));
+    expect(entry.maskedKey.length, isNot(entry.key.length));
   });
 
   test('store keeps multiple keys and switches the active endpoint', () async {
@@ -166,9 +166,7 @@ void main() {
     expect(find.textContaining('Enter an API key first.'), findsOneWidget);
   });
 
-  testWidgets('Keys page shows the active endpoint and can hide/remove keys', (
-    tester,
-  ) async {
+  testWidgets('Keys page fully masks keys and can remove them', (tester) async {
     await ApiKeyStore.instance.addKey(
       'AIzaSyAbCdEfGh1234567890',
       AiEndpoint.presets[1],
@@ -181,10 +179,9 @@ void main() {
     expect(find.text('ACTIVE ENDPOINT'), findsOneWidget);
     expect(find.textContaining('model: gemini-2.5-flash'), findsOneWidget);
     expect(find.text(ApiKeyStore.instance.active!.maskedKey), findsWidgets);
-
-    await tester.tap(find.byTooltip('Show key'));
-    await tester.pumpAndSettle();
-    expect(find.text('AIzaSyAbCdEfGh1234567890'), findsOneWidget);
+    expect(find.byTooltip('Show key'), findsNothing);
+    expect(find.byTooltip('Hide key'), findsNothing);
+    expect(find.text('AIzaSyAbCdEfGh1234567890'), findsNothing);
 
     await tester.tap(find.byTooltip('Remove key'));
     await tester.pumpAndSettle();

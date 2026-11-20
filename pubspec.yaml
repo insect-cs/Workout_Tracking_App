@@ -46,6 +46,9 @@ dependencies:
   web: ^1.1.0
   pdf: ^3.13.1
   flutter_secure_storage: ^11.2.0
+  hive_ce: ^2.24.0
+  # 2.6.0 adds native-asset zlib hooks that require a C compiler on Windows.
+  hive_ce_flutter: 2.5.0
 
 dev_dependencies:
   flutter_test:
@@ -72,6 +75,7 @@ flutter:
   assets:
     - assets/videos/
     - assets/images/
+    - assets/fonts/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

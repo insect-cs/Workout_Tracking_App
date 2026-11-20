@@ -45,6 +45,20 @@ class PlanDetails {
     'exerciseCombination': exerciseCombination,
     if (dayLabel != null) 'dayLabel': dayLabel,
   };
+
+  factory PlanDetails.fromJson(Map<String, dynamic> json) => PlanDetails(
+    goal: (json['goal'] as String?) ?? '',
+    experienceLevel: (json['experienceLevel'] as String?) ?? '',
+    equipment: (json['equipment'] as String?) ?? '',
+    daysPerWeek: (json['daysPerWeek'] as num?)?.toInt() ?? 1,
+    exerciseTypes:
+        (json['exerciseTypes'] as List<dynamic>?)
+            ?.map((value) => value.toString())
+            .toList() ??
+        const <String>[],
+    exerciseCombination: (json['exerciseCombination'] as String?) ?? '',
+    dayLabel: json['dayLabel'] as String?,
+  );
 }
 
 /// A single day (or the only day) of a generated plan.
@@ -62,6 +76,27 @@ class PlanDay {
     required this.exercises,
     this.note = '',
   });
+
+  Map<String, dynamic> toJson() => {
+    'label': label,
+    'workoutName': workoutName,
+    'focus': focus,
+    'exercises': exercises.map((exercise) => exercise.toJson()).toList(),
+    'note': note,
+  };
+
+  factory PlanDay.fromJson(Map<String, dynamic> json) => PlanDay(
+    label: (json['label'] as String?) ?? '',
+    workoutName: (json['workoutName'] as String?) ?? '',
+    focus: (json['focus'] as String?) ?? '',
+    exercises:
+        (json['exercises'] as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>()
+            .map(ExerciseModel.fromJson)
+            .toList() ??
+        const <ExerciseModel>[],
+    note: (json['note'] as String?) ?? '',
+  );
 }
 
 /// The complete AI-generated plan returned by Gemini.
@@ -85,4 +120,69 @@ class GeneratedPlan {
   });
 
   bool get isWeekly => scope == PlanScope.week;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'scope': scope.name,
+    'title': title,
+    'overview': overview,
+    'details': details.toJson(),
+    'days': days.map((day) => day.toJson()).toList(),
+    'createdAt': createdAt.toIso8601String(),
+  };
+
+  factory GeneratedPlan.fromJson(Map<String, dynamic> json) => GeneratedPlan(
+    id: (json['id'] as String?) ?? '',
+    scope: PlanScope.values.firstWhere(
+      (value) => value.name == json['scope'],
+      orElse: () => PlanScope.day,
+    ),
+    title: (json['title'] as String?) ?? '',
+    overview: (json['overview'] as String?) ?? '',
+    details: PlanDetails.fromJson(
+      (json['details'] as Map<String, dynamic>?) ?? const {},
+    ),
+    days:
+        (json['days'] as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>()
+            .map(PlanDay.fromJson)
+            .toList() ??
+        const <PlanDay>[],
+    createdAt:
+        DateTime.tryParse((json['createdAt'] as String?) ?? '') ??
+        DateTime.now(),
+  );
+}
+
+/// One generated plan explicitly saved from the Plan result view.
+///
+/// The wrapper keeps a separate history id and saved timestamp so the same
+/// generated plan can be recognised without colliding with new generations.
+class SavedPlanEntry {
+  const SavedPlanEntry({
+    required this.id,
+    required this.plan,
+    required this.savedAt,
+  });
+
+  final String id;
+  final GeneratedPlan plan;
+  final DateTime savedAt;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'plan': plan.toJson(),
+    'savedAt': savedAt.toIso8601String(),
+  };
+
+  factory SavedPlanEntry.fromJson(Map<String, dynamic> json) => SavedPlanEntry(
+    id:
+        (json['id'] as String?) ??
+        'saved-plan-${DateTime.now().microsecondsSinceEpoch}',
+    plan: GeneratedPlan.fromJson(
+      (json['plan'] as Map<String, dynamic>?) ?? const {},
+    ),
+    savedAt:
+        DateTime.tryParse((json['savedAt'] as String?) ?? '') ?? DateTime.now(),
+  );
 }

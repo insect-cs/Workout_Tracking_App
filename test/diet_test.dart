@@ -3,10 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:workout_app/models/diet_models.dart';
 import 'package:workout_app/screens/diet_screen.dart';
 import 'package:workout_app/services/api_key_service.dart';
+import 'package:workout_app/services/local_store.dart';
 import 'package:workout_app/state/diet_state.dart';
 
 void main() {
   setUp(() async {
+    await LocalStore.instance.resetForTesting();
     DietState.instance.reset();
     await ApiKeyStore.instance.resetForTesting();
   });

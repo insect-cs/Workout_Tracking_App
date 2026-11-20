@@ -1,0 +1,102 @@
+THIRD-PARTY NOTICES
+===================
+
+This project distributes third-party libraries and assets. Their license terms
+are summarized below. The full license texts are available at the URLs listed
+for each item and in the LICENSE files shipped with the packages in pub.dev /
+the respective upstream projects.
+
+1. Flutter / Dart packages
+--------------------------
+
+The following packages are used directly by this app. Versions are the ones
+resolved in pubspec.lock for the release build.
+
+  Package                          Version   License
+  -------------------------------- --------- -------------------------
+  flutter (Flutter SDK)           3.47.9     BSD 3-Clause
+  cupertino_icons                 1.0.9      MIT
+  google_fonts                    6.3.3      BSD 3-Clause
+  http                            1.6.0      BSD 3-Clause
+  url_launcher                    6.3.3      BSD 3-Clause
+  image_picker                    1.2.4      BSD 3-Clause
+  video_player                    2.14.1     BSD 3-Clause
+  camera                          0.11.4     BSD 3-Clause
+  camera_android_camerax          0.6.30     BSD 3-Clause
+  path_provider                   2.1.6      BSD 3-Clause
+  flutter_staggered_animations    1.1.1      MIT
+  google_mlkit_pose_detection     1.0.3      MIT
+  web                             1.1.2      BSD 3-Clause
+  pdf                             3.13.1     Apache License 2.0
+  flutter_secure_storage          11.2.0     BSD 3-Clause
+  hive_ce                         2.24.0     BSD 3-Clause
+  hive_ce_flutter                 2.5.0      BSD 3-Clause
+  flutter_lints (dev only)        6.0.0      BSD 3-Clause
+
+  BSD 3-Clause: https://opensource.org/licenses/BSD-3-Clause
+  MIT:          https://opensource.org/licenses/MIT
+  Apache 2.0:   https://www.apache.org/licenses/LICENSE-2.0
+
+2. Bundled web runtime and pose model
+-------------------------------------
+
+The web build bundles these files under web/js and web/models:
+
+  - TensorFlow.js (tf.min.js)
+    Copyright 2024 Google LLC. All Rights Reserved.
+    Licensed under the Apache License, Version 2.0.
+    https://github.com/tensorflow/tfjs
+
+  - TensorFlow.js Pose Detection (pose-detection.min.js)
+    Copyright 2023 Google LLC. All Rights Reserved.
+    Licensed under the Apache License, Version 2.0.
+    https://github.com/tensorflow/tfjs-models
+
+  - MoveNet Lightning pose-detection model (web/models/movenet_lightning)
+    Model files converted with TensorFlow.js Converter v3.6.0.
+    Copyright Google LLC. Licensed under the Apache License, Version 2.0.
+    https://github.com/tensorflow/tfjs-models/tree/master/pose-detection
+
+  Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+
+3. Fonts
+--------
+
+  - Inter (assets/fonts/Inter-*.ttf)
+    Copyright (c) The Inter Project Authors.
+    Licensed under the SIL Open Font License, Version 1.1.
+    https://github.com/rsms/inter
+
+  - Space Grotesk (assets/fonts/SpaceGrotesk-*.ttf)
+    Copyright (c) The Space Grotesk Project Authors.
+    Licensed under the SIL Open Font License, Version 1.1.
+    https://github.com/floriankarsten/space-grotesk
+
+  - Material Icons (bundled by Flutter via uses-material-design)
+    Copyright Google LLC. Licensed under the Apache License, Version 2.0.
+    https://github.com/google/material-design-icons
+
+  - Cupertino Icons (via the cupertino_icons package)
+    MIT License. See package LICENSE file.
+
+  SIL Open Font License 1.1: https://openfontlicense.org/open-font-license-official-text/
+
+4. Android / native dependencies
+--------------------------------
+
+The APK includes transitive native libraries pulled in by the Flutter plugins,
+including but not limited to:
+
+  - AndroidX libraries and AndroidX CameraX 1.5.3 (Apache License 2.0)
+  - Google Play Services / Google ML Kit Pose Detection (Google terms;
+    see https://developers.google.com/ml-kit/terms)
+  - Guava (Apache License 2.0)
+  - androidx.concurrent:concurrent-futures (Apache License 2.0)
+
+  Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+
+5. No bundled credentials
+-------------------------
+
+No API keys, tokens, or service credentials are bundled in the app. AI keys are
+entered by the user at runtime and stored on-device in secure storage.

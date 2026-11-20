@@ -4,9 +4,10 @@
 > Read this file at the start of any new session to restore context. Update it
 > after every meaningful change.
 >
-> **Last updated:** 2026-11-20 (API-key dialog layout fixes, responsive app
-> dialogs, key moved from URL to header, malformed Gemini URL fix, YouTube web
-> CORS fix, project state committed/tagged)
+> **Last updated:** 2026-11-20 (end-of-day state saved: Plan History tab for
+> weekly/single-day results, single-session login gate with guest/new user,
+> fully masked API keys, encrypted Hive CE namespacing, bundled Google Fonts,
+> YouTube network access restored per user, analyze/55 tests/web build verified)
 > **Session model:** Each new feature/bugfix session appends to §5 Task Log.
 
 ---
@@ -17,22 +18,47 @@
   `https://github.com/insect-cs/Workout_Tracking_App.git`, branch `main`.
   Current local commit is tagged `saved-2026-11-20-api-key-fixes` — "Save
   current project state: API key dialog, secure headers and dialog fixes".
-  Working tree is clean. This commit is
-  **ahead of `origin/main` by 1 and has NOT been pushed**. Last pushed commit
-  remains `8ddc2e4` (theme toggle, 2026-11-18).
+  The local-first / Hive CE / login-gate / Plan-History / bundled-font changes
+  are in the working tree and are **not committed yet**. Branch is **ahead of
+  `origin/main` by 1 and has NOT been pushed**. Last pushed commit remains
+  `8ddc2e4` (theme toggle, 2026-11-18).
 - **Navigation / UI:** Global Material 3 expressive theme with seeded palette
-  and app-wide Hero flights. Route-based bottom nav with **7 custom-drawn,
-  name-specific animated glyphs** (Home / Plan / Calories / Generate / Saved /
-  Logger / Pose). Home header has a light/dark toggle and an **Auto color
-  scheme** button cycling six curated seeds; every `AppColors` role derives
-  from the active `ColorScheme`. **Diet** and **Keys** are Home cards (routes
-  `/diet` and `/keys`), kept out of the bottom bar.
+  and app-wide Hero flights. The app now starts on a **single-session login
+  gate** (`Continue as guest` / `Continue as new user`); after sign-in the root
+  switches to `MainShell`, so there is no back route to login. Home has a
+  **Sign out** action that returns to login while keeping the session on disk.
+  Route-based bottom nav has **7 custom-drawn, name-specific animated glyphs**
+  (Home / Plan / Calories / Generate / Saved / Logger / Pose). Home header has
+  a light/dark toggle and an **Auto color scheme** button cycling six curated
+  seeds; every `AppColors` role derives from the active `ColorScheme`. **Diet**
+  and **Keys** are Home cards (routes `/diet` and `/keys`), kept out of the
+  bottom bar. The **Plan** section now has a third **History** tab; generated
+  weekly/single-day results can be saved there from the end of the result view.
+- **Local-first persistence:** Ordinary app state is stored on-device as JSON
+  in an **encrypted Hive CE box** via `lib/services/local_store.dart`. The
+  32-byte AES key for that box is generated on first run and stored in
+  `flutter_secure_storage` alongside API keys. This covers saved workouts,
+  current workout, exercise logs, selected tab, diet days/goals/entries, theme
+  mode/palette, Plan forms/result/tab/history, Calories form/results/tab, and
+  the Workout input draft. `shared_preferences` is no longer used. All ordinary
+  keys are namespaced to the active session (`guest` or `new_user`); only the
+  session marker is global. Legacy unnamespaced data was migrated to `guest`.
+- **Fonts / runtime network:** `Inter` and `SpaceGrotesk` TTFs are bundled in
+  `assets/fonts`, and `main()` sets
+  `GoogleFonts.config.allowRuntimeFetching = false`, so no `fonts.gstatic.com`
+  requests are made. TF.js/MoveNet/model files were already local. Per user
+  decision, YouTube scraping (native) and YouTube thumbnails are still allowed
+  to use the network; web keeps the search-URL fallback to avoid CORS errors.
+  User-initiated `url_launcher` browser opens also remain.
 - **Plan generator:** Weekly + Single-day tabs collect goal, experience,
   equipment, schedule and optional exercise types/combinations (full
   deselection supported; empty values sent as "no preference"). CTAs
   `Generate Plan for a week` / `Generate Plan for a single day` (Single-day
   schedule defaults to **Day 1**) render the plan inline with YouTube demo
-  cards resolved via `YouTubeService`. AI-gated.
+  cards resolved via `YouTubeService`. Both results end with **Save to
+  History**, which stores that result in the Plan section's new **History**
+  tab (newest first, reopen/delete actions); History is namespaced per session,
+  so it works the same for guest and new user. AI-gated.
 - **Calories:** Weekly estimate + BMI tabs collect Age/Gender/Height/Weight
   (plus Activity dropdown on Weekly). CTAs `Generate Estimate` /
   `Generate results`. Locally computed Mifflin-St Jeor BMR/TDEE and BMI values
@@ -42,16 +68,19 @@
   calorie and water goals. **Food** activity: item, veg/non-veg, quantity,
   optional photo, Gemini **Validate** (calories + nutrients inline, Save
   deducts calories from the calorie goal). **Water** activity: ml amount,
-  Save deducts from the water goal. State is in-memory via `DietState`.
+  Save deducts from the water goal. State is held by `DietState` and persisted
+  per date via the device-local store.
 - **AI keys (new, runtime):** No compile-time `GEMINI_API_KEY` requirement.
   Every AI action uses a shared `ensureAiAccess` gate: with no validated key it
   opens a dialog to paste a key and pick an endpoint/model (four Gemini presets
   or a custom base URL + model). **Validate** makes a real test request and
   only stores the key on HTTP 200; missing/invalid/expired/unreachable keys
   show a clear error. Valid keys are persisted with `flutter_secure_storage`.
-  The `/keys` page shows the active endpoint/model + masked key, hide/unhide,
-  switch endpoint, and delete; deleting the active key forces re-auth. The
-  active endpoint is displayed because results vary by model/endpoint.
+  The `/keys` page shows the active endpoint/model and a **fixed-width full
+  mask** (`••••••••••••`) with **no reveal button, no characters, and no length
+  hint**. It still supports switching endpoints and deleting keys; deleting
+  the active key forces re-auth. The active endpoint is displayed because
+  results vary by model/endpoint.
 - **API-key layout fixes (2026-11-20):** `ApiKeyDialog` now computes a finite,
   screen-fitting width via `LayoutBuilder` + `responsiveDialogWidth`, removes
   `Expanded` from the key row, and gives the **Validate** button an explicit
@@ -62,7 +91,8 @@
   the web dialog theme injects `BoxConstraints.expand()`.
 - **Key hygiene:** Keys are no longer placed in request URLs (`?key=`). All
   Gemini-compatible calls now send `x-goog-api-key` via shared
-  `geminiHeaders(key)`. UI continues to show only `maskedKey`.
+  `geminiHeaders(key)`. UI continues to show only the full-width `maskedKey`,
+  never the raw value.
 - **Gemini URL fix:** `AiEndpoint.generateUrl` no longer duplicates
   `:generateContent` when a custom base URL is pasted as a full endpoint URL.
 - **YouTube web fix:** `YouTubeService` skips direct YouTube scraping on web
@@ -76,9 +106,15 @@
   secure storage — no real keys in tracked files, tokens, or credential files.
   `env.json` / `env.example.json` remain but are no longer required by AI
   features.
-- **Validation:** `flutter analyze lib test` clean (no issues), `flutter test`
-  **42/42 passed**. Latest full web build has not been re-run after the
-  2026-11-20 changes; run `flutter build web --release` before deployment.
+- **Validation:** `dart format lib test` clean, `flutter analyze lib test`
+  **No issues found**, `flutter test` **55/55 passed**, and
+  `flutter build web --release` succeeded after the Plan-History change.
+  Built `build/web/assets/assets/fonts/` contains the bundled TTFs.
+- **End-of-day save:** All 2026-11-20 work is captured above and in §5 Task
+  Log. The working tree remains uncommitted, branch `main` is ahead of
+  `origin/main` by 1, and nothing has been pushed. The authoritative validation
+  for this saved state is analyze clean, 55/55 tests passing, and a successful
+  web release build.
 - **Local run:** `flutter run` (no `--dart-define` needed now); VS Code configs
   / `run_local.bat` still pass `--dart-define-from-file=env.json` but it is no
   longer required.
@@ -176,6 +212,24 @@ Flutter workout app (`workout_app/`) with pose tracking, exercise logging, and p
    selected view (Daily = last 7 days, Weekly = last 28 days, Monthly = last
    180 days) — only that timeframe's aggregated bins/rows and matching sessions
    are included.
+10. **Local-first state:** Secrets use `flutter_secure_storage` (API keys and
+    the Hive AES key); all other data uses `LocalStore` + an encrypted Hive CE
+    box. Keys are namespaced per session, so guest and new user can never
+    coexist. Screens read synchronously from the in-memory cache after startup
+    load, and writes are fire-and-forget (`unawaited`) from existing void
+    setters/callbacks.
+11. **Bundled Google Fonts:** `allowRuntimeFetching = false` requires matching
+    local assets; `Inter-*.ttf` and `SpaceGrotesk-*.ttf` are checked into
+    `assets/fonts` and declared in `pubspec.yaml`. Without the assets, styles
+    throw/emit errors when runtime fetching is disabled.
+12. **YouTube network policy:** User explicitly allowed YouTube scraping and
+    YouTube thumbnails to access the network. Native scraping remains; web
+    avoids direct scraping (CORS) and returns a YouTube search URL. Gemini /
+    custom BYOK endpoints remain the only other app-originated network calls.
+13. **Single session rule:** `SessionState` is the only authority for profile
+    selection. `signIn()` deletes the other namespace and gives a new user a
+    clean partition; `signOut()` only flips the session marker. The login screen
+    disables both options until the stale session's delete icon is used.
 
 ---
 
@@ -188,9 +242,11 @@ navigation with Hero shared-element transitions on the major flows.
 **Status:** Pose tracking working on Chrome (user-verified 2026-11-17). Logger
 progress-graph features (set-split weight/reps/time, visualizations, timeframe
 export) implemented 2026-11-18. Material 3 runtime regression fixed 2026-11-18:
-Home now loads and bottom navigation works. Final validation:
-`flutter analyze --no-pub` no issues, `flutter test` 2/2 passed,
-`flutter build web --release` success (Wasm dry run succeeded).
+Home now loads and bottom navigation works. Local-first persistence and bundled
+fonts added 2026-11-20. Single-session login, full key masking, and Plan
+History added the same day. Latest validation (authoritative):
+`flutter analyze lib test` no issues, `flutter test` 55/55 passed,
+`flutter build web --release` succeeded.
 
 **Pose tracking (web/mobile):**
 - Real-time skeleton over playing video / live camera (mobile) ✅
@@ -205,6 +261,8 @@ Home now loads and bottom navigation works. Final validation:
 - Export Data button: CSV & PDF for selected timeframe only (Daily/Weekly/Monthly) ✅
 
 **Known limitations:**
+- Local-first, not fully offline: Gemini/BYOK calls, YouTube scraping/
+  thumbnails, and user-opened links still require network.
 - Live camera tracking is mobile-only (web shows explanatory error)
 - Windows desktop: no pose tracking (ML Kit/camera limitations)
 - MoveNet confidence < 0.3 joints are not drawn (painter rule)
@@ -543,8 +601,9 @@ flutter build web --release
   stores the key on HTTP 200; empty, invalid, expired or unreachable keys show
   a descriptive error in the dialog. Valid keys are persisted with
   `flutter_secure_storage`. A new **Keys** page (Home card) shows the currently
-  active endpoint/model and every saved key with hide/unhide, "Use this
-  endpoint" and remove actions. Removing the active key means the next AI
+  active endpoint/model and "Use this endpoint" / remove actions (the original
+  hide/unhide control was later removed in favour of a fixed full mask).
+  Removing the active key means the next AI
   feature asks for authentication again. Different endpoints/models are shown
   explicitly because they produce different results.
 - **Files:** `lib/services/api_key_service.dart` (new: `AiEndpoint`,
@@ -598,6 +657,118 @@ flutter build web --release
   **42/42 passed**. Committed locally and tagged
   `saved-2026-11-20-api-key-fixes`; not pushed.
 
+### 2026-11-20 — Local-first device persistence + bundled fonts
+- **What:** Added `shared_preferences` and a shared `LocalStore` with async
+  startup load, synchronous cached reads, JSON writes, and a test reset hook.
+  Added `toJson`/`fromJson` to workout, diet, plan, and calorie models.
+  `WorkoutState` now restores saved workouts, current workout, exercise logs,
+  and selected tab; `DietState` restores per-date goals/entries;
+  `ThemeController` restores mode/palette; `PlanScreen` restores both form
+  drafts, generated plan, and tab; `CaloriesScreen` restores form, weekly/BMI
+  results, and tab; `WorkoutInputScreen` restores its input draft. `main()`
+  loads the store and all states before `runApp`. `MainShell` uses
+  `WorkoutState.instance`.
+- **What (fonts/network):** Downloaded `Inter` and `SpaceGrotesk` TTF weights
+  from the already-installed `google_fonts` 6.3.3 asset URLs into
+  `assets/fonts`, declared the folder in `pubspec.yaml`, and disabled runtime
+  fetching in `main()`. No app code fetches Google Fonts at runtime. Following
+  the user's explicit correction, native YouTube scraping and YouTube thumbnail
+  images were restored; web still returns a search URL for scraping to avoid
+  CORS errors.
+- **What (tests):** Added `test/local_persistence_test.dart` for store JSON
+  round-trips and restore of workout, diet, theme, generated-plan, and
+  calorie/BMI state. Screen/state tests now reset `LocalStore` in `setUp` so
+  persistence does not leak between tests.
+- **Files:** `pubspec.yaml`, `pubspec.lock`, `assets/fonts/*` (new),
+  `lib/services/local_store.dart` (new), `lib/main.dart`,
+  `lib/screens/main_shell.dart`, `lib/screens/{plan,calories,workout_input}_screen.dart`,
+  `lib/state/{workout_state,diet_state}.dart`, `lib/theme/theme_controller.dart`,
+  `lib/models/{workout,diet,plan,calories}_models.dart`, updated tests and new
+  `test/local_persistence_test.dart`.
+- **Result:** `dart format lib test` clean. `flutter analyze lib test`:
+  **No issues found**. `flutter test`: **48/48 passed**.
+  `flutter build web --release`: succeeded; bundled fonts are present in
+  `build/web/assets/assets/fonts/`. Changes are **uncommitted** in the working
+  tree and have not been pushed.
+
+### 2026-11-20 — Migrate local data to encrypted Hive CE
+- **What:** Replaced `shared_preferences` with `hive_ce` + `hive_ce_flutter`.
+  `LocalStore` now calls `Hive.initFlutter()`, generates/reuses a 32-byte AES
+  key from `flutter_secure_storage`, opens the `workout_app_local_v1` box with
+  `HiveAesCipher`, and mirrors its JSON string values in memory. If the stored
+  key no longer matches the box, the store recovers by deleting and recreating
+  the box with a fresh key. Added `LocalStore.flush()`; Hive CE also flushes on
+  app pause via `hive_ce_flutter`.
+- **Clarification:** Requested `flutter_secure_package` was interpreted as
+  `flutter_secure_storage` (the actual pub.dev package, already used for API
+  keys). API keys and the Hive encryption key both live there. No app data is
+  stored in plain SharedPreferences anymore.
+- **Version note:** Pinned `hive_ce_flutter: 2.5.0`. Version `2.6.0` adds
+  native-asset zlib hooks that fail on this Windows setup with
+  `No compiler configured on host 'windows_x64'`. `hive_ce: ^2.24.0` works.
+- **Files:** `pubspec.yaml`, `pubspec.lock`, `lib/services/local_store.dart`,
+  `PROJECT_STATE.md`.
+- **Result:** `dart format lib test` clean. `flutter analyze lib test`:
+  **No issues found**. `flutter test`: **48/48 passed**.
+  `flutter build web --release`: succeeded. Changes remain uncommitted; nothing
+  was pushed.
+
+### 2026-11-20 — Single-session login gate + fully masked keys
+- **What:** Added `lib/screens/login_screen.dart` and
+  `lib/state/session_state.dart`. The app now boots to a login screen with
+  `Continue as guest` and `Continue as new user`. Choosing guest seeds the
+  preloaded test workouts/logs (`GuestSeed` + `WorkoutState.ensureSeeded()`);
+  choosing new user deletes both namespaces, clears saved API keys, and reloads
+  empty state. There is no back route into login after sign-in - only the
+  **Sign out** button in the Home header returns there.
+- **Single-session rule:** Sign-out keeps the session marker on disk. The login
+  screen then shows the session label and a delete icon; both sign-in buttons
+  stay disabled until that icon confirms deletion. Deleting removes both
+  namespaces, the session marker, and saved API keys. `LocalStore` now scopes
+  ordinary keys as `workout_app.<namespace>.<key>` and keeps only the session
+  marker global; legacy keys were migrated to `guest`.
+- **State reload:** `WorkoutState.reload()`, `DietState.reload()`, and
+  `ThemeController.reload()` swap singleton state to the selected namespace.
+  `ThemeController` suppresses persistence while notifiers are being reset so
+  an old palette cannot leak into the new profile.
+- **Keys:** `ApiKeyEntry.maskedKey` is now a fixed 12-bullet mask. Removed the
+  Keys-page reveal/show/hide control entirely; neither characters, key length,
+  nor raw key text appear in the frontend. `ApiKeyStore.clear()` was added for
+  session deletion.
+- **Files:** `lib/main.dart`, `lib/screens/{login_screen,main_shell,home_screen,keys_screen}.dart`,
+  `lib/services/{local_store,api_key_service}.dart`,
+  `lib/state/{session_state,guest_seed,workout_state,diet_state}.dart`,
+  `lib/theme/theme_controller.dart`, updated `test/app_smoke_test.dart`,
+  `test/api_key_service_test.dart`, and new `test/session_login_test.dart`.
+- **Result:** `dart format lib test` clean. `flutter analyze lib test`:
+  **No issues found**. `flutter test`: **51/51 passed**.
+  `flutter build web --release`: succeeded. Changes remain uncommitted; nothing
+  was pushed.
+
+### 2026-11-20 — Plan History tab for weekly and single-day results
+- **What:** Added a third **History** tab to the Plan section alongside Weekly
+  and Single day. Generated results now end with **Save to History**, which
+  stores the exact generated plan (including its scope, inputs, days, exercises
+  and YouTube demo URLs) as a timestamped entry. Once saved, the button changes
+  to **Saved to History** and a **View History** shortcut appears.
+- **History view:** Saved plans are listed newest first with scope, saved time,
+  overview, **Open saved plan**, and confirmed **Delete saved plan** actions.
+  Opening an entry restores it to the result view. The empty state explains how
+  to create the first entry. The History tab has no generate CTA, and the last
+  selected Weekly/Single-day form still determines the generator scope.
+- **Session scope:** `SavedPlanEntry` plus the new `PlanHistoryStore` persist
+  through the encrypted, namespaced `LocalStore`. Guest and new user histories
+  are isolated; new-user sign-in starts empty and session deletion removes the
+  history with the rest of that namespace. `LocalStore.deleteNamespace()` was
+  also fixed to clear matching in-memory cache keys, not just Hive box keys.
+- **Files:** `lib/models/plan_models.dart`, `lib/services/local_store.dart`,
+  `lib/services/plan_history_service.dart` (new), `lib/screens/plan_screen.dart`,
+  updated `test/local_persistence_test.dart` and `test/plan_screen_test.dart`.
+- **Result:** `dart format lib test` clean. `flutter analyze lib test`:
+  **No issues found**. `flutter test`: **55/55 passed**.
+  `flutter build web --release`: succeeded. Changes remain uncommitted; nothing
+  was pushed.
+
 ---
 
 ## 6. Gotchas / Lessons Learned
@@ -645,6 +816,36 @@ flutter build web --release
     memory/DevTools. Real confidentiality needs a backend proxy + secret
     manager. `x-goog-api-key` keeps keys out of URL/console logs but not out of
     inspected request headers.
+17. **Disabling Google Fonts fetching is not enough:** bundle the exact asset
+    names (`Inter-Regular.ttf`, `SpaceGrotesk-Bold.ttf`, etc.) or styled text
+    fails. `google_fonts` chooses the nearest bundled weight for requests such
+    as `FontWeight.w800` when that exact weight is not published.
+18. **Persistence in tests:** `LocalStore.resetForTesting()` must run before
+    pumping screens or checking state; otherwise a previous test's saved form
+    state leaks into the next one. `WorkoutState.instance` is now the single
+    shared instance used by the app shell; extra instances are valid in tests.
+19. **`hive_ce_flutter` 2.6.0 on Windows:** its zlib native assets require a C
+    compiler (`vswhere.exe` / Visual Studio Build Tools). This environment has
+    none configured, so 2.5.0 is pinned. Revisit only after installing build
+    tools or when a pure-Dart backend is available.
+20. **Hive CE box iteration:** `Box<E>` exposes `keys`, not `entries`; read each
+    value with `box.get(key)`. `Hive.initFlutter()` is safe on web (path stays
+    `null` and Hive uses IndexedDB).
+21. **Root widget switch is the login gate:** `MaterialApp.home` switches
+    between `LoginScreen` and `MainShell` from `SessionState.signedIn`. Do not
+    reintroduce a login *route* on the inner `Navigator`, or back navigation
+    could reveal it after sign-in.
+22. **Reset `ApiKeyStore` in widget tests that sign in:** if a test pumps
+    `WorkoutTrackingApp` and taps a sign-in option, call
+    `ApiKeyStore.instance.resetForTesting()` in `setUp`; otherwise
+    `ensureLoaded()` tries the secure-storage plugin and the sign-in await can
+    stall the root switch.
+23. **Dart field initializers cannot read earlier instance fields:** pristine
+    guest data is captured in `WorkoutState._captureInitialData()` from both
+    constructors, not in field initializers.
+24. **`deleteNamespace()` must clear the in-memory cache too:** Hive keys alone
+    are enough in the app, but tests/memory-only mode need `_values` removal or
+    deleted session data appears to survive a namespace switch.
 
 ---
 
@@ -655,8 +856,9 @@ flutter build web --release
 - [ ] User verification: logger set splits (weight/reps/time), graph
       visualizations (Bars/Line/Area/Pie), and timeframe-scoped CSV/PDF export
 - [ ] Web fallback for live camera (getUserMedia + MoveNet) instead of error
-- [ ] Persist rep counts / session history (integrate with workout_state) where
-      not already persisted
+- [ ] Hand off pose-tracking rep counts into `WorkoutState` session history;
+      generic workouts/logs are now persisted, but pose reps are not yet wired
+      into that flow
 - [ ] Form feedback based on tracked metrics (depth %, tempo, asymmetry)
 - [ ] Consider multi-person detection (MoveNet MultiPose) for videos with
       several subjects
@@ -666,6 +868,8 @@ flutter build web --release
       app-owned Gemini key. Add auth/rate limiting, then switch Flutter
       services from direct Gemini calls to `/api/gemini`. Keep BYOK path for
       users who prefer their own key.
-- [ ] Re-run `flutter build web --release` after the 2026-11-20 changes.
-- [ ] Push the local commit/tag `saved-2026-11-20-api-key-fixes` to
-      `origin/main` when ready.
+- [x] Re-ran `flutter build web --release` after the 2026-11-20 changes.
+- [ ] Commit/tag the local-first + Hive CE + login-gate + Plan-History +
+      bundled-font changes (only the earlier API-key-fix snapshot is
+      committed/tagged).
+- [ ] Push the local commit/tag(s) to `origin/main` when ready.

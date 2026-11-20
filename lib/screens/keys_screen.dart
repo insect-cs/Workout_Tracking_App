@@ -20,7 +20,6 @@ class KeysScreen extends StatefulWidget {
 
 class _KeysScreenState extends State<KeysScreen> {
   final ApiKeyStore _store = ApiKeyStore.instance;
-  final Set<String> _revealed = <String>{};
 
   @override
   void initState() {
@@ -98,9 +97,11 @@ class _KeysScreenState extends State<KeysScreen> {
                           ..._store.entries.map(_buildKeyCard),
                         const SizedBox(height: 16),
                         Text(
-                          'Keys are stored with flutter_secure_storage. '
-                          'Different endpoints/models can produce different '
-                          'results across all AI features.',
+                          'Keys are stored with flutter_secure_storage and are '
+                          'fully masked on this screen - no characters, no '
+                          'reveal button, and no length hint. Different '
+                          'endpoints/models can produce different results '
+                          'across all AI features.',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             color: AppColors.textSlate,
@@ -304,7 +305,6 @@ class _KeysScreenState extends State<KeysScreen> {
 
   Widget _buildKeyCard(ApiKeyEntry entry) {
     final isActive = _store.active?.id == entry.id;
-    final revealed = _revealed.contains(entry.id);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -362,32 +362,13 @@ class _KeysScreenState extends State<KeysScreen> {
             children: [
               Expanded(
                 child: Text(
-                  revealed ? entry.key : entry.maskedKey,
+                  entry.maskedKey,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.spaceGrotesk(
                     fontSize: 11,
                     color: AppColors.textWhite,
                   ),
                 ),
-              ),
-              IconButton(
-                tooltip: revealed ? 'Hide key' : 'Show key',
-                icon: Icon(
-                  revealed
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                  size: 18,
-                  color: AppColors.textSlate,
-                ),
-                onPressed: () {
-                  setState(() {
-                    if (revealed) {
-                      _revealed.remove(entry.id);
-                    } else {
-                      _revealed.add(entry.id);
-                    }
-                  });
-                },
               ),
               IconButton(
                 tooltip: 'Remove key',

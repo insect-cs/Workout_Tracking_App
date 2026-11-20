@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:workout_app/main.dart';
+import 'package:workout_app/services/api_key_service.dart';
+import 'package:workout_app/services/local_store.dart';
+import 'package:workout_app/state/session_state.dart';
 import 'package:workout_app/theme/theme_controller.dart';
 
 void main() {
+  setUp(() async {
+    await LocalStore.instance.resetForTesting();
+    await ApiKeyStore.instance.resetForTesting();
+    SessionState.resetForTesting();
+    ThemeController.mode.value = ThemeMode.dark;
+    ThemeController.seed.value = ThemeController.palettes.first.seed;
+    ThemeController.paletteName.value = ThemeController.palettes.first.name;
+  });
+
   testWidgets('app boots on Home and tab navigation works', (tester) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 2.0;
@@ -11,6 +23,10 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(const WorkoutTrackingApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Choose your session'), findsOneWidget);
+    await tester.tap(find.text('Continue as guest'));
     await tester.pumpAndSettle();
 
     expect(

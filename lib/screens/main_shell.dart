@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/workout_models.dart';
+import '../state/session_state.dart';
 import '../state/workout_state.dart';
 import '../theme/nav_animations.dart';
 import 'calories_screen.dart';
@@ -45,7 +48,7 @@ class _RouteChangeObserver extends NavigatorObserver {
 }
 
 class _MainShellState extends State<MainShell> {
-  final WorkoutState _state = WorkoutState();
+  final WorkoutState _state = WorkoutState.instance;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   static const String homeRoute = '/home';
@@ -120,6 +123,7 @@ class _MainShellState extends State<MainShell> {
       });
     });
     _state.addListener(_handleStateChanged);
+    unawaited(_state.ensureLoaded());
   }
 
   @override
@@ -364,6 +368,7 @@ class _MainShellState extends State<MainShell> {
               _open(inputRoute, exercise: exercise),
           onOpenDiet: () => _open(dietRoute),
           onOpenKeys: () => _open(keysRoute),
+          onSignOut: () => unawaited(SessionState.signOut()),
         );
     }
   }

@@ -56,6 +56,40 @@ class ExerciseModel {
       videoUrl: videoUrl ?? this.videoUrl,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'category': category,
+    'difficulty': difficulty,
+    'target': target,
+    'equipment': equipment,
+    'sets': sets,
+    'reps': reps,
+    'rest': rest,
+    'pr': pr,
+    'note': note,
+    'cues': cues,
+    if (videoUrl != null) 'videoUrl': videoUrl,
+  };
+
+  factory ExerciseModel.fromJson(Map<String, dynamic> json) => ExerciseModel(
+    name: (json['name'] as String?) ?? '',
+    category: (json['category'] as String?) ?? '',
+    difficulty: (json['difficulty'] as String?) ?? '',
+    target: (json['target'] as String?) ?? '',
+    equipment: (json['equipment'] as String?) ?? '',
+    sets: (json['sets'] as String?) ?? '',
+    reps: (json['reps'] as String?) ?? '',
+    rest: (json['rest'] as String?) ?? '',
+    pr: (json['pr'] as String?) ?? '',
+    note: (json['note'] as String?) ?? '',
+    cues:
+        (json['cues'] as List<dynamic>?)
+            ?.map((value) => value.toString())
+            .toList() ??
+        const <String>[],
+    videoUrl: json['videoUrl'] as String?,
+  );
 }
 
 class WorkoutModel {
@@ -96,6 +130,31 @@ class WorkoutModel {
       exercises: exercises ?? this.exercises,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'focus': focus,
+    'duration': duration,
+    'difficulty': difficulty,
+    'date': date,
+    'exercises': exercises.map((exercise) => exercise.toJson()).toList(),
+  };
+
+  factory WorkoutModel.fromJson(Map<String, dynamic> json) => WorkoutModel(
+    id: (json['id'] as String?) ?? '',
+    name: (json['name'] as String?) ?? '',
+    focus: (json['focus'] as String?) ?? '',
+    duration: (json['duration'] as String?) ?? '',
+    difficulty: (json['difficulty'] as String?) ?? '',
+    date: (json['date'] as String?) ?? '',
+    exercises:
+        (json['exercises'] as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>()
+            .map(ExerciseModel.fromJson)
+            .toList() ??
+        const <ExerciseModel>[],
+  );
 }
 
 class ExerciseSetLog {
@@ -132,6 +191,26 @@ class ExerciseSetLog {
       completedAt: completedAt ?? this.completedAt,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'setNumber': setNumber,
+    'weight': weight,
+    'reps': reps,
+    'durationSeconds': durationSeconds,
+    'restSeconds': restSeconds,
+    'completedAt': completedAt.toIso8601String(),
+  };
+
+  factory ExerciseSetLog.fromJson(Map<String, dynamic> json) => ExerciseSetLog(
+    setNumber: (json['setNumber'] as num?)?.toInt() ?? 1,
+    weight: (json['weight'] as num?)?.toDouble() ?? 0,
+    reps: (json['reps'] as num?)?.toInt() ?? 0,
+    durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+    restSeconds: (json['restSeconds'] as num?)?.toInt() ?? 0,
+    completedAt:
+        DateTime.tryParse((json['completedAt'] as String?) ?? '') ??
+        DateTime.now(),
+  );
 }
 
 class WorkoutSessionLog {
@@ -182,4 +261,33 @@ class WorkoutSessionLog {
       notes: notes ?? this.notes,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'exerciseName': exerciseName,
+    'category': category,
+    'timestamp': timestamp.toIso8601String(),
+    'totalDurationSeconds': totalDurationSeconds,
+    'sets': sets.map((set) => set.toJson()).toList(),
+    'notes': notes,
+  };
+
+  factory WorkoutSessionLog.fromJson(Map<String, dynamic> json) =>
+      WorkoutSessionLog(
+        id: (json['id'] as String?) ?? '',
+        exerciseName: (json['exerciseName'] as String?) ?? '',
+        category: (json['category'] as String?) ?? '',
+        timestamp:
+            DateTime.tryParse((json['timestamp'] as String?) ?? '') ??
+            DateTime.now(),
+        totalDurationSeconds:
+            (json['totalDurationSeconds'] as num?)?.toInt() ?? 0,
+        sets:
+            (json['sets'] as List<dynamic>?)
+                ?.whereType<Map<String, dynamic>>()
+                .map(ExerciseSetLog.fromJson)
+                .toList() ??
+            const <ExerciseSetLog>[],
+        notes: (json['notes'] as String?) ?? '',
+      );
 }

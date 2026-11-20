@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:workout_app/screens/home_screen.dart';
+import 'package:workout_app/services/local_store.dart';
 import 'package:workout_app/state/workout_state.dart';
 import 'package:workout_app/theme/app_theme.dart';
 import 'package:workout_app/theme/theme_controller.dart';
@@ -24,7 +25,8 @@ double _contrast(Color a, Color b) {
 }
 
 void main() {
-  setUp(() {
+  setUp(() async {
+    await LocalStore.instance.resetForTesting();
     ThemeController.mode.value = ThemeMode.dark;
     ThemeController.seed.value = ThemeController.palettes.first.seed;
     ThemeController.paletteName.value = ThemeController.palettes.first.name;
