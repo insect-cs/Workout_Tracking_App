@@ -4,10 +4,9 @@
 > Read this file at the start of any new session to restore context. Update it
 > after every meaningful change.
 >
-> **Last updated:** 2026-11-20 (end-of-day state saved: Plan History tab for
-> weekly/single-day results, single-session login gate with guest/new user,
-> fully masked API keys, encrypted Hive CE namespacing, bundled Google Fonts,
-> YouTube network access restored per user, analyze/55 tests/web build verified)
+> **Last updated:** 2026-11-20 (security review, signed production APK,
+> GitHub release v1.0.0 published, Android 16 startup-crash fix verified;
+> 55/55 tests passing, repo clean and pushed)
 > **Session model:** Each new feature/bugfix session appends to §5 Task Log.
 
 ---
@@ -16,12 +15,14 @@
 
 - **Git / GitHub:** `workout_app` is a Git repository. `origin` is
   `https://github.com/insect-cs/Workout_Tracking_App.git`, branch `main`.
-  Current local commit is tagged `saved-2026-11-20-api-key-fixes` — "Save
-  current project state: API key dialog, secure headers and dialog fixes".
-  The local-first / Hive CE / login-gate / Plan-History / bundled-font changes
-  are in the working tree and are **not committed yet**. Branch is **ahead of
-  `origin/main` by 1 and has NOT been pushed**. Last pushed commit remains
-  `8ddc2e4` (theme toggle, 2026-11-18).
+  All work is committed and pushed; working tree is clean and `main` is in sync
+  with `origin/main`. Two release commits sit on top of `1a4ed59`:
+  `e53a47e` "Release v1.0.0: local-first sessions, pose tracking and signed
+  Android build" and `717e615` "Fix release build crash on Android 16: preserve
+  Room WorkDatabase constructor". Annotated tag `v1.0.0` points at `717e615`.
+  GitHub release **v1.0.0 — Workout Tracking** is published (not draft, not
+  prerelease) with `app-release.apk` and `app-release.apk.sha256`:
+  https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.0.0
 - **Navigation / UI:** Global Material 3 expressive theme with seeded palette
   and app-wide Hero flights. The app now starts on a **single-session login
   gate** (`Continue as guest` / `Continue as new user`); after sign-in the root
@@ -109,12 +110,37 @@
 - **Validation:** `dart format lib test` clean, `flutter analyze lib test`
   **No issues found**, `flutter test` **55/55 passed**, and
   `flutter build web --release` succeeded after the Plan-History change.
-  Built `build/web/assets/assets/fonts/` contains the bundled TTFs.
+  Built `build/web/assets/assets/fonts/` contains the bundled TTFs. Signed
+  Android release APK built and verified after the R8 fix; 55/55 tests still
+  pass. `flutter config --enable-windows-desktop` was restored after the
+  temporary build workaround.
+- **Android release / signing:** Unique app ID `com.insectcs.workoutapp`,
+  launcher label "Workout Tracking", version 1.0.0 (code 1), minSdk 24 /
+  targetSdk 36. Release signing reads git-ignored `android/key.properties`,
+  which points at git-ignored `android/app/release-keystore.jks` (alias
+  `workoutapp`, RSA 2048, valid to 2054-04-07, cert SHA-256
+  `c12b84b5dc519c096d3bf1aa3c70c88e747dd0a56c11cf6c0ffc962c7bd00c63`).
+  APK SHA-256 (current fixed build):
+  `d837f75266bf39af269e429d985f6108c1dd3cbe797cfd77e39cbc02615b8cc2`.
+  Backup outside the repo: `E:\test\keystore-backup\2026-11-20\` and
+  `E:\test\keystore-backup\workout-tracking-keystore-2026-11-20.zip`.
+- **Release build workarounds:** `android/build.gradle.kts` adds explicit
+  `androidx.concurrent:concurrent-futures:1.2.0` to every Android module
+  (CameraX 1.5 + Gradle 9 compile-classpath bug). `android/gradle.properties`
+  sets `kotlin.incremental=false` (cross-drive C:/E: cache bug).
+  `android/app/proguard-rules.pro` keeps Room `*_Impl` constructors and
+  WorkManager classes (AGP 9 R8 startup-crash fix). Windows builds need
+  Developer Mode for plugin symlinks, or Flutter's Windows-desktop flag
+  temporarily disabled.
+- **Docs / licensing:** `README.md` rewritten for users (features, install,
+  bring-your-own-key, privacy, build notes). Added MIT `LICENSE` (copyright
+  2026 insect-cs) and third-party `NOTICE`. Removed unreferenced demo media
+  with unverifiable licensing; `.gitkeep` files retained.
 - **End-of-day save:** All 2026-11-20 work is captured above and in §5 Task
-  Log. The working tree remains uncommitted, branch `main` is ahead of
-  `origin/main` by 1, and nothing has been pushed. The authoritative validation
-  for this saved state is analyze clean, 55/55 tests passing, and a successful
-  web release build.
+  Log. Everything is committed, pushed and released. The authoritative
+  validation for this saved state is analyze clean, 55/55 tests passing, a
+  signed APK whose release download hash was re-verified, and user confirmation
+  that the app launches correctly on Android 16.
 - **Local run:** `flutter run` (no `--dart-define` needed now); VS Code configs
   / `run_local.bat` still pass `--dart-define-from-file=env.json` but it is no
   longer required.
@@ -244,9 +270,12 @@ progress-graph features (set-split weight/reps/time, visualizations, timeframe
 export) implemented 2026-11-18. Material 3 runtime regression fixed 2026-11-18:
 Home now loads and bottom navigation works. Local-first persistence and bundled
 fonts added 2026-11-20. Single-session login, full key masking, and Plan
-History added the same day. Latest validation (authoritative):
+History added the same day. Signed Android release APK published as GitHub
+v1.0.0 the same day; an Android 16 launch crash caused by AGP 9 R8 was fixed and
+the user confirmed the app works correctly. Latest validation (authoritative):
 `flutter analyze lib test` no issues, `flutter test` 55/55 passed,
-`flutter build web --release` succeeded.
+`flutter build web --release` succeeded, release APK signature and download
+hash verified.
 
 **Pose tracking (web/mobile):**
 - Real-time skeleton over playing video / live camera (mobile) ✅
@@ -710,8 +739,8 @@ flutter build web --release
   `PROJECT_STATE.md`.
 - **Result:** `dart format lib test` clean. `flutter analyze lib test`:
   **No issues found**. `flutter test`: **48/48 passed**.
-  `flutter build web --release`: succeeded. Changes remain uncommitted; nothing
-  was pushed.
+  `flutter build web --release`: succeeded. Changes were uncommitted at this
+  point; committed and released later the same day (entries below).
 
 ### 2026-11-20 — Single-session login gate + fully masked keys
 - **What:** Added `lib/screens/login_screen.dart` and
@@ -742,10 +771,10 @@ flutter build web --release
   `test/api_key_service_test.dart`, and new `test/session_login_test.dart`.
 - **Result:** `dart format lib test` clean. `flutter analyze lib test`:
   **No issues found**. `flutter test`: **51/51 passed**.
-  `flutter build web --release`: succeeded. Changes remain uncommitted; nothing
-  was pushed.
+  `flutter build web --release`: succeeded. Changes were uncommitted at this
+  point; committed and released later the same day (entries below).
 
-### 2026-11-20 — Plan History tab for weekly and single-day results
+### 2026-11-20 — Plan History tab for weekly and single-day results (pre-release)
 - **What:** Added a third **History** tab to the Plan section alongside Weekly
   and Single day. Generated results now end with **Save to History**, which
   stores the exact generated plan (including its scope, inputs, days, exercises
@@ -766,8 +795,97 @@ flutter build web --release
   updated `test/local_persistence_test.dart` and `test/plan_screen_test.dart`.
 - **Result:** `dart format lib test` clean. `flutter analyze lib test`:
   **No issues found**. `flutter test`: **55/55 passed**.
-  `flutter build web --release`: succeeded. Changes remain uncommitted; nothing
-  was pushed.
+  `flutter build web --release`: succeeded. Changes were uncommitted at this
+  point; they were committed and released later the same day (entries below).
+
+### 2026-11-20 — Pre-release security review and signed Android APK
+- **What:** Reviewed the whole repository before any push: tracked files,
+  working tree and full git history for real credentials. Confirmed the real
+  Gemini key exists only in git-ignored `env.json`; the git remote has no
+  embedded credentials; only placeholder keys (`AIzaSyAbCdEfGh1234567890`) and
+  a minified-JS false positive appeared in history. Added `/android/build/` to
+  `.gitignore`. Nothing was pushed at this stage (user chose review + APK only).
+- **What (APK):** Set unique namespace/application ID `com.insectcs.workoutapp`
+  (user chose a new ID; org-derived from `insect-cs`), launcher label
+  "Workout Tracking", moved `MainActivity.kt` to the new package, generated a
+  release JKS with alias `workoutapp`, and wired signing via git-ignored
+  `android/key.properties`. Built and verified the signed APK: v2 signature,
+  cert `CN=Workout Tracking`, correct app ID/version, no embedded API key.
+  Created a keystore backup outside the repo at `E:\test\keystore-backup\`.
+- **Build blockers fixed:** Kotlin cross-drive incremental cache
+  (`kotlin.incremental=false`), Windows symlink requirement (temporarily
+  `flutter config --no-enable-windows-desktop`, restored afterwards), CameraX
+  1.5 / Gradle 9 missing `androidx.concurrent.futures.CallbackToFutureAdapter`
+  on the compile classpath (explicit `androidx.concurrent:concurrent-futures:1.2.0`
+  in `android/build.gradle.kts`), and a UTF-8 BOM in `key.properties` corrupting
+  `storePassword` (file rewritten without BOM).
+- **Files:** `.gitignore`, `android/app/build.gradle.kts`,
+  `android/app/src/main/AndroidManifest.xml`,
+  `android/app/src/main/kotlin/com/insectcs/workoutapp/MainActivity.kt` (new),
+  old `.../com/example/workout_app/MainActivity.kt` (deleted),
+  `android/build.gradle.kts`, `android/gradle.properties`,
+  `android/key.properties` (ignored), `android/app/release-keystore.jks`
+  (ignored), `E:\test\keystore-backup\*` (outside repo).
+- **Result:** `flutter test` 55/55; signed `app-release.apk` produced, signature
+  and binary secret scan verified; keystore backup hashes matched the originals
+  and the JKS opened with the stored password.
+
+### 2026-11-20 — README, LICENSE, NOTICE and media provenance cleanup
+- **What:** Replaced the stock `README.md` with user-facing docs (features,
+  APK install, bring-your-own-key flow, privacy/data behaviour, build notes).
+  Added MIT `LICENSE` (copyright 2026 insect-cs) and `NOTICE` listing direct
+  Flutter/Dart packages with resolved versions, bundled TensorFlow.js/MoveNet
+  assets, Inter/Space Grotesk fonts (SIL OFL 1.1), Material Icons, and native
+  Android dependencies.
+- **What (media verification):** Audited four bundled demo assets.
+  `workout_sample.mp4` and `deepx_squat.mp4` were byte-identical; the video/JPEG
+  files had Google/C2PA or no provenance metadata and no license. None were
+  referenced anywhere in `lib/` or `test/` — they were only bundled because
+  `pubspec.yaml` declares the asset directories. Removed all four (`.gitkeep`
+  retained), updated `NOTICE`/`README`, and rebuilt the APK (~106.5 MB → 99.8 MB).
+- **Files:** `README.md`, `LICENSE` (new), `NOTICE` (new),
+  `assets/images/workout_sample.jpg` (deleted), `assets/videos/*.mp4` (deleted).
+- **Result:** Rebuilt APK verified (same signing cert, no embedded key, new
+  SHA-256); 55/55 tests still passed.
+
+### 2026-11-20 — Published GitHub release v1.0.0
+- **What:** With user approval, staged all 58 files and committed as `e53a47e`
+  "Release v1.0.0: local-first sessions, pose tracking and signed Android
+  build", pushed `main`, created and pushed annotated tag `v1.0.0`, and published
+  a non-draft/non-prerelease GitHub release with release notes covering features,
+  BYOK setup, privacy and checksum. Attached `app-release.apk` plus
+  `app-release.apk.sha256`.
+- **What (verification):** Re-downloaded the APK from the public release URL and
+  confirmed its SHA-256 matched the local build exactly.
+- **Files:** release at
+  https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.0.0
+- **Result:** Release live; no secrets in repo/history/APK; repo clean and in
+  sync with `origin/main`.
+
+### 2026-11-20 — Fix Android 16 startup crash (R8 stripped Room constructor)
+- **What:** User reported launch crash on Android 16:
+  `RuntimeException: Failed to create an instance of androidx.work.impl.WorkDatabase`
+  via `androidx.startup.InitializationProvider` / `WorkManagerInitializer`.
+  Root cause: AGP **9.1.0** R8 removed the generated `WorkDatabase_Impl` no-arg
+  constructor; Room instantiates it reflectively. Confirmed from the R8 mapping
+  file: `WorkDatabase_Impl` was present but had no `<init>` entry.
+- **Fix:** Added `android/app/proguard-rules.pro` with
+  `-keep class * extends androidx.room.RoomDatabase { <init>(); }` plus keeps
+  for `androidx.work.impl.**` and `androidx.work.WorkManagerInitializer`, and
+  wired `isMinifyEnabled = true` + `proguardFiles(...)` into the release build
+  type. Rebuilt; mapping now contains `WorkDatabase_Impl.<init>()` and
+  `WorkManagerInitializer.<init>()`/`create()`.
+- **What (release repair):** Per user choice, deleted the broken APK/checksum
+  assets from v1.0.0 and uploaded the fixed pair (old SHA-256
+  `40b25900…80f259` → new `d837f752…e8cc2`); updated release notes with the new
+  hash and a fix note; committed the fix as `717e615`, pushed `main`, and
+  force-moved the `v1.0.0` tag to that commit so the source tag matches the APK.
+  Re-downloaded and hash-verified the repaired release.
+- **Files:** `android/app/proguard-rules.pro` (new), `android/app/build.gradle.kts`,
+  GitHub release v1.0.0 assets/notes, tag `v1.0.0`.
+- **Result:** User confirmed the app now works properly on Android 16. 55/55
+  tests pass; signature unchanged (`c12b84b5…00c63`). User is continuing to test
+  and will report any further issues.
 
 ---
 
@@ -846,6 +964,27 @@ flutter build web --release
 24. **`deleteNamespace()` must clear the in-memory cache too:** Hive keys alone
     are enough in the app, but tests/memory-only mode need `_values` removal or
     deleted session data appears to survive a namespace switch.
+25. **AGP 9 + R8 strips Room `*_Impl` constructors:** WorkManager opens a Room DB
+    at startup via App Startup; if R8 removes the no-arg constructor, the app
+    dies before `main()` with "Failed to create an instance of WorkDatabase".
+    Keep `-keep class * extends androidx.room.RoomDatabase { <init>(); }`.
+26. **CameraX 1.5 + Gradle 9:** `camera-core` declares `concurrent-futures` as
+    runtime-only, but its compiled classes carry JSpecify annotations needing it
+    on the compile classpath. Add `androidx.concurrent:concurrent-futures`
+    explicitly to every Android module, including plugins.
+27. **`key.properties` must have no UTF-8 BOM:** PowerShell `Set-Content
+    -Encoding UTF8` adds `EF BB BF`, which corrupts the first key name and makes
+    AGP report `SigningConfig "release" is missing required property
+    "storePassword"`. Write with `UTF8Encoding($false)`.
+28. **Kotlin cache across drives:** with the pub cache on `C:` and the project
+    on `E:`, incremental Kotlin compilation fails; `kotlin.incremental=false` in
+    `android/gradle.properties` is the workaround.
+29. **Windows Flutter symlinks:** building with the `windows/` folder present
+    needs Developer Mode; toggling `flutter config --no-enable-windows-desktop`
+    temporarily (and restoring it afterwards) avoids the requirement.
+30. **Unreferenced asset folders are still bundled:** `pubspec.yaml` directory
+    entries (e.g. `assets/videos/`) include every file in the folder. Remove
+    unused media to keep the APK small and licensing clean.
 
 ---
 
@@ -869,7 +1008,12 @@ flutter build web --release
       services from direct Gemini calls to `/api/gemini`. Keep BYOK path for
       users who prefer their own key.
 - [x] Re-ran `flutter build web --release` after the 2026-11-20 changes.
-- [ ] Commit/tag the local-first + Hive CE + login-gate + Plan-History +
-      bundled-font changes (only the earlier API-key-fix snapshot is
-      committed/tagged).
-- [ ] Push the local commit/tag(s) to `origin/main` when ready.
+- [x] Commit/tag the local-first + Hive CE + login-gate + Plan-History +
+      bundled-font changes (done as `e53a47e`, tag `v1.0.0`).
+- [x] Push the local commit/tag(s) to `origin/main` (done).
+- [ ] User verification: continued Android 16 testing after the R8 fix (user is
+      testing and will report any further issues).
+- [ ] Copy the keystore backup ZIP from `E:\test\keystore-backup\` to durable,
+      offline storage (password manager or external drive).
+- [ ] Revisit build workarounds (`kotlin.incremental=false`, explicit
+      concurrent-futures dependency, R8 keeps) when Flutter/AGP versions move on.
