@@ -9,6 +9,7 @@ import '../services/export_service.dart';
 import '../state/workout_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_hero_tags.dart';
+import '../widgets/app_dialog.dart';
 
 class ExerciseLoggerScreen extends StatefulWidget {
   final WorkoutState state;
@@ -186,11 +187,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
             ),
             content: Row(
               children: [
-                Icon(
-                  Icons.alarm_on,
-                  color: AppColors.primaryOrange,
-                  size: 20,
-                ),
+                Icon(Icons.alarm_on, color: AppColors.primaryOrange, size: 20),
                 const SizedBox(width: 10),
                 Text(
                   'Rest time finished! Time for the next set.',
@@ -464,11 +461,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.timer,
-                    color: AppColors.primaryOrange,
-                    size: 12,
-                  ),
+                  Icon(Icons.timer, color: AppColors.primaryOrange, size: 12),
                   const SizedBox(width: 4),
                   Flexible(
                     child: Text(
@@ -1232,11 +1225,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
         ),
         child: Column(
           children: [
-            Icon(
-              Icons.fitness_center,
-              color: AppColors.textSlate,
-              size: 28,
-            ),
+            Icon(Icons.fitness_center, color: AppColors.textSlate, size: 28),
             const SizedBox(height: 8),
             Text(
               'No sets logged in this session yet',
@@ -1500,11 +1489,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.history,
-                  color: AppColors.primaryOrange,
-                  size: 16,
-                ),
+                Icon(Icons.history, color: AppColors.primaryOrange, size: 16),
                 const SizedBox(width: 6),
                 Text(
                   '${logs.length} LOGGED SESSIONS',
@@ -1535,11 +1520,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.delete_sweep,
-                      color: AppColors.rose,
-                      size: 14,
-                    ),
+                    Icon(Icons.delete_sweep, color: AppColors.rose, size: 14),
                     const SizedBox(width: 4),
                     Text(
                       'Clear History',
@@ -1705,7 +1686,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
     showDialog(
       context: context,
       builder: (ctx) {
-        return AlertDialog(
+        return AppDialog(
           backgroundColor: AppColors.cardSurface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -1966,11 +1947,7 @@ class _ExerciseLoggerScreenState extends State<ExerciseLoggerScreen>
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right,
-              color: AppColors.textSlate,
-              size: 18,
-            ),
+            Icon(Icons.chevron_right, color: AppColors.textSlate, size: 18),
           ],
         ),
       ),

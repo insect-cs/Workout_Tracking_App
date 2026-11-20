@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 class YouTubeService {
@@ -130,7 +131,16 @@ class YouTubeService {
       return _videoCache[cleaned]!;
     }
 
-    // 3. Resolve exact video ID from YouTube search endpoint
+    // 3. Browsers block scraping youtube.com directly with CORS. On web, go
+    // straight to the search URL instead of producing console errors.
+    if (kIsWeb) {
+      final webQuery = Uri.encodeComponent(
+        '$exerciseName exercise form tutorial',
+      );
+      return 'https://www.youtube.com/results?search_query=$webQuery';
+    }
+
+    // 4. Resolve exact video ID from YouTube search endpoint (native only).
     try {
       final query = Uri.encodeComponent('$exerciseName exercise form tutorial');
       final searchUri = Uri.parse(

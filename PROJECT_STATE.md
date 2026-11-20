@@ -4,32 +4,84 @@
 > Read this file at the start of any new session to restore context. Update it
 > after every meaningful change.
 >
-> **Last updated:** 2026-11-18 (theme toggle + GitHub state saved)
+> **Last updated:** 2026-11-20 (API-key dialog layout fixes, responsive app
+> dialogs, key moved from URL to header, malformed Gemini URL fix, YouTube web
+> CORS fix, project state committed/tagged)
 > **Session model:** Each new feature/bugfix session appends to §5 Task Log.
 
 ---
 
-## 0. Current State Snapshot (2026-11-18)
+## 0. Current State Snapshot (2026-11-20)
 
 - **Git / GitHub:** `workout_app` is a Git repository. `origin` is
-  `https://github.com/insect-cs/Workout_Tracking_App.git`, branch `main`. The
-  theme-change commit `8ddc2e4` is on GitHub; at the end of this session the
-  working tree is clean and synced with `origin/main`.
-- **UI:** Global Material 3 expressive theme with seeded vibrant palette,
-  app-wide Hero flights, route-based bottom navigation with a stable selected
-  icon, and a Home header toggle for light/dark mode.
+  `https://github.com/insect-cs/Workout_Tracking_App.git`, branch `main`.
+  Current local commit is tagged `saved-2026-11-20-api-key-fixes` — "Save
+  current project state: API key dialog, secure headers and dialog fixes".
+  Working tree is clean. This commit is
+  **ahead of `origin/main` by 1 and has NOT been pushed**. Last pushed commit
+  remains `8ddc2e4` (theme toggle, 2026-11-18).
+- **Navigation / UI:** Global Material 3 expressive theme with seeded palette
+  and app-wide Hero flights. Route-based bottom nav with **7 custom-drawn,
+  name-specific animated glyphs** (Home / Plan / Calories / Generate / Saved /
+  Logger / Pose). Home header has a light/dark toggle and an **Auto color
+  scheme** button cycling six curated seeds; every `AppColors` role derives
+  from the active `ColorScheme`. **Diet** and **Keys** are Home cards (routes
+  `/diet` and `/keys`), kept out of the bottom bar.
+- **Plan generator:** Weekly + Single-day tabs collect goal, experience,
+  equipment, schedule and optional exercise types/combinations (full
+  deselection supported; empty values sent as "no preference"). CTAs
+  `Generate Plan for a week` / `Generate Plan for a single day` (Single-day
+  schedule defaults to **Day 1**) render the plan inline with YouTube demo
+  cards resolved via `YouTubeService`. AI-gated.
+- **Calories:** Weekly estimate + BMI tabs collect Age/Gender/Height/Weight
+  (plus Activity dropdown on Weekly). CTAs `Generate Estimate` /
+  `Generate results`. Locally computed Mifflin-St Jeor BMR/TDEE and BMI values
+  are sent to Gemini to keep the narrative accurate; results render inline.
+  AI-gated.
+- **Diet:** Date picker defaults to today; 24 one-hour slots; editable daily
+  calorie and water goals. **Food** activity: item, veg/non-veg, quantity,
+  optional photo, Gemini **Validate** (calories + nutrients inline, Save
+  deducts calories from the calorie goal). **Water** activity: ml amount,
+  Save deducts from the water goal. State is in-memory via `DietState`.
+- **AI keys (new, runtime):** No compile-time `GEMINI_API_KEY` requirement.
+  Every AI action uses a shared `ensureAiAccess` gate: with no validated key it
+  opens a dialog to paste a key and pick an endpoint/model (four Gemini presets
+  or a custom base URL + model). **Validate** makes a real test request and
+  only stores the key on HTTP 200; missing/invalid/expired/unreachable keys
+  show a clear error. Valid keys are persisted with `flutter_secure_storage`.
+  The `/keys` page shows the active endpoint/model + masked key, hide/unhide,
+  switch endpoint, and delete; deleting the active key forces re-auth. The
+  active endpoint is displayed because results vary by model/endpoint.
+- **API-key layout fixes (2026-11-20):** `ApiKeyDialog` now computes a finite,
+  screen-fitting width via `LayoutBuilder` + `responsiveDialogWidth`, removes
+  `Expanded` from the key row, and gives the **Validate** button an explicit
+  finite width. This fixed `BoxConstraints forces an infinite width` on web.
+- **Responsive dialogs:** Added shared `lib/widgets/app_dialog.dart` with
+  `AppDialog` + `responsiveDialogWidth`. Used by the API-key dialog, remove-key
+  confirmation, and clear-history confirmation so dialogs stay on screen when
+  the web dialog theme injects `BoxConstraints.expand()`.
+- **Key hygiene:** Keys are no longer placed in request URLs (`?key=`). All
+  Gemini-compatible calls now send `x-goog-api-key` via shared
+  `geminiHeaders(key)`. UI continues to show only `maskedKey`.
+- **Gemini URL fix:** `AiEndpoint.generateUrl` no longer duplicates
+  `:generateContent` when a custom base URL is pasted as a full endpoint URL.
+- **YouTube web fix:** `YouTubeService` skips direct YouTube scraping on web
+  (`kIsWeb`) and returns a search URL, removing CORS console errors.
 - **Pose tracking:** Web uses TensorFlow.js MoveNet with bundled model files;
-  Android/iOS use ML Kit. Landmark tracking, rep counting, angles, and exercise
-  identification run per frame. Videos are never uploaded to Gemini; the model
-  is preloaded and full-video byte reads were removed.
-- **Configuration / security:** Gemini access uses compile-time
-  `String.fromEnvironment('GEMINI_API_KEY', defaultValue: '')`. The real key is
-  only in local ignored `env.json`; tracked files contain no real API keys,
-  tokens, or credential files. `env.example.json` is a placeholder template.
-- **Validation:** `flutter analyze --no-pub` clean, `flutter test` 2/2 passed,
-  `flutter build web --release --dart-define-from-file=env.json` successful.
-- **Local run:** `flutter run --dart-define-from-file=env.json`, or use the VS
-  Code **workout_app (Chrome, local env)** configuration / `run_local.bat`.
+  Android/iOS use ML Kit. Landmark tracking, rep counting, angles, continuous
+  exercise identification, seek slider and dynamic rep counter run per frame.
+  Videos are never uploaded to Gemini; still-image analysis uses the active
+  validated key.
+- **Configuration / security:** Real keys are entered at runtime and stored in
+  secure storage — no real keys in tracked files, tokens, or credential files.
+  `env.json` / `env.example.json` remain but are no longer required by AI
+  features.
+- **Validation:** `flutter analyze lib test` clean (no issues), `flutter test`
+  **42/42 passed**. Latest full web build has not been re-run after the
+  2026-11-20 changes; run `flutter build web --release` before deployment.
+- **Local run:** `flutter run` (no `--dart-define` needed now); VS Code configs
+  / `run_local.bat` still pass `--dart-define-from-file=env.json` but it is no
+  longer required.
 - **Remaining backlog:** see §7 (web live camera, persistence, form feedback,
   multi-person detection, and final user verification).
 
@@ -180,7 +232,9 @@ flutter build web --release
 - PowerShell note: `flutter analyze` stderr trips PowerShell NativeCommandError;
   pipe through `Out-File` then filter, e.g.
   `flutter analyze --no-pub 2>&1 | Out-File -Encoding utf8 E:\test\analyze_out.txt`
-- Workspace is not a git repo (per `E:\test`); rely on this file for state
+- Workspace root `E:\test` is not a repo, but `E:\test\workout_app` **is** a Git
+  repo (`main`, origin configured). Use Git for snapshots; keep this file as the
+  human-readable context companion.
 
 ---
 
@@ -373,6 +427,177 @@ flutter build web --release
 - **Result:** Verified `origin/main` contains theme commit `8ddc2e4`, no real
   API keys are tracked, and `env.json` remains ignored by Git.
 
+### 2026-11-19 — New Plan section (weekly + single day) with Gemini-gated generation
+- **What:** Added a sixth bottom-nav destination, **Plan**. The screen has
+  Weekly and Single day tabs; each keeps its own form state and collects
+  Primary Goal (fat loss / weight gain / muscle building / raw strength /
+  general endurance), Experience Level (beginner / intermediate / advanced),
+  Equipment (bodyweight only / dumbbells / resistance bands / full commercial
+  gym), Schedule (2–7 days per week) and Exercise Types (Full Body / Push /
+  Pull / Legs / Upper / Lower / Rest-Light Cardio, multi-select).
+  The bottom CTA changes to `Generate Plan for a week` on the Weekly tab and
+  `Generate Plan for a single day` on the Single day tab. Pressing it checks
+  the compile-time Gemini API key first: when absent, no request is made and a
+  clear error banner is shown; when present, Gemini returns a structured plan
+  which is rendered inline (per-day cards with exercises, sets, reps, rest and
+  coaching cues) with an edit/regenerate action.
+  Refinement: the Single day tab's Schedule is a Day 1–Day 7 selector that
+  defaults to **Day 1**; that label is sent to Gemini and shown on the result.
+  The Weekly tab keeps its 2–7 days/week slider.
+  Also added **Exercise Combinations** to both tabs: presets Chest+Tricep,
+  Back+Bicep, Legs+Shoulder, plus a Custom plus-separated input
+  (A+B+...+Nth string) with live parsed-group preview and empty-value
+  validation. The combination goes into the Gemini prompt and result summary.
+  Generated exercises now get accurate YouTube demonstrations: `PlanService`
+  resolves every exercise through `YouTubeService` (deduplicated + parallel)
+  and stores the exact watch URL on each `ExerciseModel`; the Plan result
+  renders a video thumbnail card (with play overlay + external launch via
+  `url_launcher`) and falls back to a "Find demo on YouTube" link if no exact
+  video id could be resolved.
+  Both Exercise Types and Exercise Combinations are now optional: every chip
+  can be deselected (including the last one), clearing a combination is done by
+  tapping the selected preset again, and Gemini receives an explicit
+  "no preference" instruction instead of a forced default.
+- **Files:** `lib/models/plan_models.dart` (new), `lib/services/plan_service.dart`
+  (new), `lib/screens/plan_screen.dart` (new), `lib/screens/main_shell.dart`
+  (new route/nav destination), `test/app_smoke_test.dart` (new tab index map),
+  `test/plan_screen_test.dart` (new).
+- **Result:** `flutter analyze --no-pub`: No issues found. `flutter test`: 5/5
+  passed (including no-API-key error path and CTA label switching).
+
+### 2026-11-19 — New Calories section (weekly estimate + BMI) with Gemini gating
+- **What:** Added a seventh bottom-nav destination, **Calories**, with two
+  tabs. The Weekly estimate tab collects Age, Gender, Height, Weight and a
+  6-level Activity dropdown (sedentary → extra active); its CTA is
+  `Generate Estimate`. The BMI calculate tab collects Age, Gender, Height and
+  Weight; its CTA is `Generate results`. Both CTAs check the compile-time
+  Gemini key first and show a clear error when it is missing.
+- **Files:** `lib/models/calories_models.dart` (new, includes testable
+  `CalorieMath` with Mifflin-St Jeor BMR, TDEE multipliers, WHO BMI category
+  and healthy weight range), `lib/services/calories_service.dart` (new),
+  `lib/screens/calories_screen.dart` (new), `lib/screens/main_shell.dart`
+  (route + nav destination), `test/app_smoke_test.dart` (updated tab indices),
+  `test/calories_screen_test.dart` (new).
+- **Result:** Gemini receives the locally computed reference numbers so its
+  narrative stays accurate; results render inline (7-day breakdown + tips for
+  calories, BMI value/category/range/recommendations for BMI).
+
+### 2026-11-19 — Auto colour scheme button + name-specific nav animations
+- **What:** Added an **Auto color scheme** button (palette icon) to the Home
+  header. Each tap cycles through six curated Material 3 seed colours, and the
+  whole app — including every custom `AppColors` role — re-themes instantly in
+  the current light/dark mode. The active palette name is shown under the
+  title. All seven navigation icons are now **custom-drawn animated glyphs**
+  with name-specific motion: Home shows a chimney rising off the roof and
+  fading away; Plan is a calendar whose page physically turns; Calories is a
+  swaying, stretching flame; Generate has stars that fade out and reappear one
+  by one; Saved shoots upward then returns from below; Logger's stopwatch hand
+  sweeps away from 12 and comes back; Pose's figure hand swings sideways and
+  returns to rest. Every motion returns to rest and repeat taps replay it.
+- **Files:** `lib/theme/theme_controller.dart` (palette list + seed/name
+  notifiers), `lib/theme/app_theme.dart` (seed comes from the controller),
+  `lib/theme/app_colors.dart` (all roles derived from the active `ColorScheme`
+  instead of hard-coded constants), `lib/main.dart` (listens to seed changes
+  and rebuilds the shell), `lib/screens/home_screen.dart` (button + animated
+  title), `lib/theme/nav_icon_art.dart` (new: custom painters + motion math
+  for all seven glyphs), `lib/theme/nav_animations.dart` (durations,
+  press-event notifier and reusable animated icon widget),
+  `lib/screens/main_shell.dart` (wires each destination to its animation),
+  `test/theme_test.dart`, `test/nav_animations_test.dart` (new).
+- **Result:** `flutter analyze --no-pub`: No issues found. `flutter test`:
+  26/26 passed.
+
+### 2026-11-19 — Diet planner page
+- **What:** Added a **Diet** page, opened from a new card on Home (kept out of
+  the bottom bar so the seven animated destinations stay uncrowded). It has a
+  date picker defaulting to today, a grid of all 24 one-hour time slots, and
+  editable daily **calorie** and **water** goals with a Save goals button.
+  Tapping a slot opens an activity editor with two types:
+  - **Food:** Food Item, Type (Veg / Non veg), Quantity, optional Photo, then a
+    **Validate with Gemini** button. Missing API key shows the standard
+    configuration error; a valid key shows an in-button loading spinner while
+    Gemini returns calories, a nutrient breakdown and a short summary, all
+    rendered inline. A Save button writes the analysed portion to the slot and
+    deducts its calories from the remaining daily calorie goal.
+  - **Water:** Water quantity in ml. Saving writes the entry to the slot and
+    deducts that amount from the remaining water intake goal.
+  Saved entries are listed inside their slot with a delete action, and remain
+  in memory when switching tabs.
+- **Files:** `lib/models/diet_models.dart` (new: `DietDay`, `DietEntry`,
+  `FoodAnalysis`, `slotLabel`), `lib/state/diet_state.dart` (new: shared
+  in-memory per-day store), `lib/services/diet_service.dart` (new: Gemini food
+  analyser with key gating), `lib/screens/diet_screen.dart` (new),
+  `lib/screens/main_shell.dart` (`/diet` route + Home callback),
+  `lib/screens/home_screen.dart` (Diet callout card),
+  `test/diet_test.dart` (new), `test/app_smoke_test.dart` (Home → Diet → back).
+- **Result:** `flutter analyze --no-pub`: No issues found. `flutter test`:
+  32/32 passed.
+
+### 2026-11-19 — App-wide validated API keys + Keys page
+- **What:** Removed the compile-time `GEMINI_API_KEY` requirement entirely.
+  Every AI action (Generate workout, Plan, Calories, Diet food validation and
+  Pose image analysis) now calls a shared `ensureAiAccess` gate: if no validated
+  key is active it opens a dialog where the user pastes a key and picks an
+  endpoint/model (four Google Gemini presets or a custom base URL + model).
+  The **Validate** button makes a real, tiny request to that endpoint and only
+  stores the key on HTTP 200; empty, invalid, expired or unreachable keys show
+  a descriptive error in the dialog. Valid keys are persisted with
+  `flutter_secure_storage`. A new **Keys** page (Home card) shows the currently
+  active endpoint/model and every saved key with hide/unhide, "Use this
+  endpoint" and remove actions. Removing the active key means the next AI
+  feature asks for authentication again. Different endpoints/models are shown
+  explicitly because they produce different results.
+- **Files:** `lib/services/api_key_service.dart` (new: `AiEndpoint`,
+  `ApiKeyEntry`, `ApiKeyStore`, `ApiKeyValidator`), `lib/widgets/api_key_dialog.dart`
+  (new: dialog + `ensureAiAccess` gate), `lib/screens/keys_screen.dart` (new),
+  `lib/services/{gemini,plan,calories,diet,pose_analysis}_service.dart` (use the
+  stored key/endpoint), `lib/screens/{plan,calories,diet,workout_input,pose_tracking}_screen.dart`
+  (gated AI buttons), `lib/screens/main_shell.dart` (`/keys` route),
+  `lib/screens/home_screen.dart` (Keys card), `lib/main.dart` (preload keys),
+  `pubspec.yaml` (`flutter_secure_storage`), `test/api_key_service_test.dart`
+  (new), updated screen/smoke/theme tests.
+- **Result:** `flutter analyze --no-pub`: No issues found. `flutter test`:
+  39/39 passed. `flutter build web --release`: succeeded.
+
+### 2026-11-20 — API-key dialog layout + key hygiene fixes
+- **What:** Fixed repeated web rendering crash
+  `BoxConstraints forces an infinite width (w=Infinity, h=46.0)` at the
+  `FilledButton` in `ApiKeyDialog`. Root cause: the web dialog route/theme can
+  inject `BoxConstraints.expand()`, and `AlertDialog`'s internal
+  `IntrinsicWidth` + stretched `Column` combined with `Row` + `Expanded` to
+  propagate an infinite intrinsic width. First fix (`constraints: BoxConstraints(maxWidth: 400)`)
+  was insufficient; final fix computes a tight finite dialog width with
+  `LayoutBuilder`, sizes content from that width, removes `Expanded`, and gives
+  the validate button a fixed width.
+- **What (remove-key):** Fixed `This widget has been unmounted ... get context`
+  when tapping Remove. The dialog builder had captured the `KeysScreen`
+  `State.context`; it now uses the dialog's own `dialogContext` for `pop()`, and
+  a `mounted` guard was added before deleting the key.
+- **What (dialogs):** Introduced shared `AppDialog` so all confirmation dialogs
+  get finite, screen-fitting widths. Applied to remove-key, clear-history, and
+  API-key dialogs.
+- **What (security):** Moved the Gemini key out of `?key=` URLs into the
+  `x-goog-api-key` header via `geminiHeaders(key)` across validation, Gemini
+  service, Plan, Calories, Diet, and Pose analysis. This keeps the key out of
+  browser console/network-error URLs. Discussed that this is **not** full
+  secrecy: browser/Android can still inspect headers/runtime memory; a backend
+  proxy is required for real confidentiality. Reiterate: the key previously
+  printed in console must be rotated.
+- **What (URL/CORS):** Fixed duplicated
+  `...:generateContent/{model}:generateContent` for pasted custom full URLs.
+  Skipped direct YouTube search scraping on web to remove CORS errors.
+- **Files:** `lib/widgets/app_dialog.dart` (new), `lib/widgets/api_key_dialog.dart`,
+  `lib/screens/keys_screen.dart`, `lib/screens/exercise_logger_screen.dart`,
+  `lib/services/api_key_service.dart`, `lib/services/gemini_service.dart`,
+  `lib/services/{plan,calories,diet,pose_analysis}_service.dart`,
+  `lib/services/youtube_service.dart`, `test/app_dialog_test.dart` (new),
+  `test/api_key_dialog_test.dart`, `test/api_key_service_test.dart`.
+  `dart format` also normalized formatting across existing `lib/` and `test/`
+  files; no behavior changes from formatting alone.
+- **Result:** `flutter analyze lib test`: No issues found. `flutter test`:
+  **42/42 passed**. Committed locally and tagged
+  `saved-2026-11-20-api-key-fixes`; not pushed.
+
 ---
 
 ## 6. Gotchas / Lessons Learned
@@ -404,6 +629,22 @@ flutter build web --release
     from `dart:io` file writes.
 12. **Volume semantics:** "weight as singular" means do **not** multiply by reps
     when aggregating volume; display the logged weight per set in splits/exports.
+13. **Web dialog theme:** This Flutter build's `_FullWindowDialogWrapper`
+    injects `DialogThemeData(constraints: BoxConstraints.expand())`. With an
+    unsized web viewport that becomes tightly infinite. Always use `AppDialog`
+    (finite `BoxConstraints.tightFor(width: ...)`) instead of raw `AlertDialog`.
+14. **`Expanded` + `IntrinsicWidth`:** `AlertDialog` wraps content in
+    `IntrinsicWidth`; avoid `Expanded` inside its content unless all ancestors
+    have provably finite widths. Give children explicit finite widths instead.
+15. **Context after `await`/in dialog builders:** Never capture the parent
+    `State.context` inside a dialog builder. Use the builder-provided context
+    (`dialogContext`) for `Navigator.pop()`, and check `mounted` before touching
+    state after async work.
+16. **Client-side secrets:** Base64/AES/`flutter_dotenv` with bundled keys is
+    obfuscation only. Once decrypted in the browser/app, the key is visible in
+    memory/DevTools. Real confidentiality needs a backend proxy + secret
+    manager. `x-goog-api-key` keeps keys out of URL/console logs but not out of
+    inspected request headers.
 
 ---
 
@@ -420,3 +661,11 @@ flutter build web --release
 - [ ] Consider multi-person detection (MoveNet MultiPose) for videos with
       several subjects
 - [ ] Clean up pre-existing `withOpacity` deprecation infos
+- [ ] **Backend proxy decision:** Choose Cloudflare Workers / Firebase
+      Functions / Cloud Run / Vercel Functions / Supabase Edge Functions for
+      app-owned Gemini key. Add auth/rate limiting, then switch Flutter
+      services from direct Gemini calls to `/api/gemini`. Keep BYOK path for
+      users who prefer their own key.
+- [ ] Re-run `flutter build web --release` after the 2026-11-20 changes.
+- [ ] Push the local commit/tag `saved-2026-11-20-api-key-fixes` to
+      `origin/main` when ready.

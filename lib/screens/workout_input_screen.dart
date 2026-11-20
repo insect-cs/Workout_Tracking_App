@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_hero_tags.dart';
 import '../state/workout_state.dart';
+import '../widgets/api_key_dialog.dart';
 
 class WorkoutInputScreen extends StatefulWidget {
   final WorkoutState state;
@@ -668,6 +669,9 @@ class _WorkoutInputScreenState extends State<WorkoutInputScreen> {
             onPressed: isLoading
                 ? null
                 : () async {
+                    if (!await ensureAiAccess(context)) return;
+                    if (!mounted) return;
+
                     final name = _nameController.text.trim().isEmpty
                         ? 'Explosive Push & Delts'
                         : _nameController.text.trim();

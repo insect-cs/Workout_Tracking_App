@@ -11,12 +11,16 @@ class HomeScreen extends StatefulWidget {
   final WorkoutState state;
   final Function(int) onTabChange;
   final Function(String?) onNavigateToInput;
+  final VoidCallback onOpenDiet;
+  final VoidCallback onOpenKeys;
 
   const HomeScreen({
     super.key,
     required this.state,
     required this.onTabChange,
     required this.onNavigateToInput,
+    required this.onOpenDiet,
+    required this.onOpenKeys,
   });
 
   @override
@@ -26,6 +30,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _searchQuery = '';
   String _selectedCategory = 'All';
+  double _paletteTurns = 0;
   final TextEditingController _searchController = TextEditingController();
 
   final List<String> _categories = [
@@ -43,6 +48,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _choosePalette() {
+    ThemeController.chooseNextPalette();
+    setState(() => _paletteTurns += 1);
   }
 
   @override
@@ -92,6 +102,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       // Section 4: AI Workout Generator Callout Card
                       _buildAICalloutCard(),
+                      const SizedBox(height: 14),
+
+                      // Section 4b: Diet planner entry
+                      _buildDietCalloutCard(),
+                      const SizedBox(height: 14),
+
+                      // Section 4c: AI key management entry
+                      _buildKeysCalloutCard(),
                       const SizedBox(height: 20),
 
                       // Section 5: Categorized Exercise Library
@@ -174,16 +192,50 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
 
-          // Title
+          // Title + active palette name
           Flexible(
-            child: Text(
-              'WORKOUT TRACKING',
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
-                color: AppColors.textWhite,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'WORKOUT TRACKING',
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                    color: AppColors.textWhite,
+                  ),
+                ),
+                ValueListenableBuilder<String>(
+                  valueListenable: ThemeController.paletteName,
+                  builder: (context, paletteName, _) => Text(
+                    'Palette: $paletteName',
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primaryOrange,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Automatic colour scheme (animated)
+          AnimatedRotation(
+            turns: _paletteTurns,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOutCubic,
+            child: IconButton(
+              onPressed: _choosePalette,
+              tooltip: 'Auto color scheme',
+              icon: Icon(
+                Icons.palette_outlined,
+                color: AppColors.primaryOrange,
+                size: 21,
               ),
             ),
           ),
@@ -202,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Bookmark link to Saved tab
           InkWell(
-            onTap: () => widget.onTabChange(2),
+            onTap: () => widget.onTabChange(4),
             borderRadius: BorderRadius.circular(12),
             child: Container(
               width: 40,
@@ -510,6 +562,126 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildDietCalloutCard() {
+    return InkWell(
+      onTap: widget.onOpenDiet,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.cardSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.orangeBorder),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.orangeSoft,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.restaurant_menu,
+                color: AppColors.primaryOrange,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'DIET PLANNER',
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
+                      color: AppColors.primaryOrange,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Track food, calories & water by hour',
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppColors.textSlate,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKeysCalloutCard() {
+    return InkWell(
+      onTap: widget.onOpenKeys,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.cardSurface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.key_outlined,
+                color: AppColors.primaryOrange,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'KEYS',
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
+                      color: AppColors.primaryOrange,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Manage AI keys & active endpoint',
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppColors.textSlate,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildExerciseSectionHeader(int count) {
     return Row(
       children: [
@@ -529,8 +701,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceHigh,
                   borderRadius: BorderRadius.circular(12),

@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/workout_models.dart';
 import '../state/workout_state.dart';
+import '../theme/nav_animations.dart';
+import 'calories_screen.dart';
+import 'diet_screen.dart';
 import 'exercise_logger_screen.dart';
 import 'home_screen.dart';
+import 'keys_screen.dart';
+import 'plan_screen.dart';
 import 'pose_tracking_screen.dart';
 import 'saved_workouts_screen.dart';
 import 'workout_input_screen.dart';
@@ -44,6 +49,10 @@ class _MainShellState extends State<MainShell> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   static const String homeRoute = '/home';
+  static const String planRoute = '/plan';
+  static const String caloriesRoute = '/calories';
+  static const String dietRoute = '/diet';
+  static const String keysRoute = '/keys';
   static const String inputRoute = '/generate';
   static const String resultRoute = '/result';
   static const String savedRoute = '/saved';
@@ -55,11 +64,17 @@ class _MainShellState extends State<MainShell> {
   // Only the NavigationBar listens to this, so route changes no longer rebuild
   // the Navigator and its currently mounted screens.
   final ValueNotifier<int> _selectedTab = ValueNotifier<int>(0);
+  final ValueNotifier<NavPressEvent> _pressEvent = ValueNotifier<NavPressEvent>(
+    const NavPressEvent(-1, 0),
+  );
+  int _pressSequence = 0;
   String _currentRoute = homeRoute;
   String? _preselectedExercise;
 
   static const List<String> _tabs = [
     homeRoute,
+    planRoute,
+    caloriesRoute,
     inputRoute,
     savedRoute,
     loggerRoute,
@@ -68,15 +83,23 @@ class _MainShellState extends State<MainShell> {
 
   int _tabForRoute(String? route) {
     switch (route) {
+      case planRoute:
+        return 1;
+      case caloriesRoute:
+        return 2;
+      // Diet and Keys are opened from Home, so Home stays highlighted.
+      case dietRoute:
+      case keysRoute:
+        return 0;
       case inputRoute:
       case resultRoute:
-        return 1;
-      case savedRoute:
-        return 2;
-      case loggerRoute:
         return 3;
-      case poseRoute:
+      case savedRoute:
         return 4;
+      case loggerRoute:
+        return 5;
+      case poseRoute:
+        return 6;
       default:
         return 0;
     }
@@ -103,6 +126,7 @@ class _MainShellState extends State<MainShell> {
   void dispose() {
     _state.removeListener(_handleStateChanged);
     _selectedTab.dispose();
+    _pressEvent.dispose();
     super.dispose();
   }
 
@@ -125,10 +149,34 @@ class _MainShellState extends State<MainShell> {
     _navigatorKey.currentState?.pushNamed(route);
   }
 
+  /// Tells the navigation icons which tab was tapped. The incrementing
+  /// sequence makes repeat taps on the same tab replay its animation.
+  void _animateTabPress(String route) {
+    final index = _tabs.indexOf(route);
+    if (index < 0) return;
+    _pressEvent.value = NavPressEvent(index, ++_pressSequence);
+  }
+
+  /// Drawn glyph with the motion that matches its destination's name.
+  Widget _navIcon(
+    int index,
+    NavIconAnimation animation, {
+    bool selected = false,
+  }) {
+    return AnimatedNavIcon(
+      index: index,
+      animation: animation,
+      pressEvent: _pressEvent,
+      selected: selected,
+    );
+  }
+
   /// Bottom navigation: reset to that tab's root route.
   void _switchTab(String route) {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
+
+    _animateTabPress(route);
 
     final previousRoute = _currentRoute;
     _currentRoute = route;
@@ -184,30 +232,68 @@ class _MainShellState extends State<MainShell> {
                       selectedIndex: selectedIndex,
                       onDestinationSelected: (index) =>
                           _switchTab(_tabs[index]),
-                      destinations: const [
+                      destinations: [
                         NavigationDestination(
-                          icon: Icon(Icons.home_outlined),
-                          selectedIcon: Icon(Icons.home),
+                          icon: _navIcon(0, NavIconAnimation.homeHop),
+                          selectedIcon: _navIcon(
+                            0,
+                            NavIconAnimation.homeHop,
+                            selected: true,
+                          ),
                           label: 'Home',
                         ),
                         NavigationDestination(
-                          icon: Icon(Icons.auto_awesome_outlined),
-                          selectedIcon: Icon(Icons.auto_awesome),
+                          icon: _navIcon(1, NavIconAnimation.planFlip),
+                          selectedIcon: _navIcon(
+                            1,
+                            NavIconAnimation.planFlip,
+                            selected: true,
+                          ),
+                          label: 'Plan',
+                        ),
+                        NavigationDestination(
+                          icon: _navIcon(2, NavIconAnimation.calorieFlicker),
+                          selectedIcon: _navIcon(
+                            2,
+                            NavIconAnimation.calorieFlicker,
+                            selected: true,
+                          ),
+                          label: 'Calories',
+                        ),
+                        NavigationDestination(
+                          icon: _navIcon(3, NavIconAnimation.generateSparkle),
+                          selectedIcon: _navIcon(
+                            3,
+                            NavIconAnimation.generateSparkle,
+                            selected: true,
+                          ),
                           label: 'Generate',
                         ),
                         NavigationDestination(
-                          icon: Icon(Icons.bookmark_border),
-                          selectedIcon: Icon(Icons.bookmark),
+                          icon: _navIcon(4, NavIconAnimation.savedDrop),
+                          selectedIcon: _navIcon(
+                            4,
+                            NavIconAnimation.savedDrop,
+                            selected: true,
+                          ),
                           label: 'Saved',
                         ),
                         NavigationDestination(
-                          icon: Icon(Icons.timer_outlined),
-                          selectedIcon: Icon(Icons.timer),
+                          icon: _navIcon(5, NavIconAnimation.loggerTick),
+                          selectedIcon: _navIcon(
+                            5,
+                            NavIconAnimation.loggerTick,
+                            selected: true,
+                          ),
                           label: 'Logger',
                         ),
                         NavigationDestination(
-                          icon: Icon(Icons.accessibility_new_outlined),
-                          selectedIcon: Icon(Icons.accessibility_new),
+                          icon: _navIcon(6, NavIconAnimation.poseWiggle),
+                          selectedIcon: _navIcon(
+                            6,
+                            NavIconAnimation.poseWiggle,
+                            selected: true,
+                          ),
                           label: 'Pose',
                         ),
                       ],
@@ -224,6 +310,14 @@ class _MainShellState extends State<MainShell> {
 
   Widget _buildScreen(String route) {
     switch (route) {
+      case planRoute:
+        return PlanScreen(onBack: _back);
+      case caloriesRoute:
+        return CaloriesScreen(onBack: _back);
+      case dietRoute:
+        return DietScreen(onBack: _back);
+      case keysRoute:
+        return KeysScreen(onBack: _back);
       case inputRoute:
         return WorkoutInputScreen(
           state: _state,
@@ -268,6 +362,8 @@ class _MainShellState extends State<MainShell> {
           },
           onNavigateToInput: (exercise) =>
               _open(inputRoute, exercise: exercise),
+          onOpenDiet: () => _open(dietRoute),
+          onOpenKeys: () => _open(keysRoute),
         );
     }
   }

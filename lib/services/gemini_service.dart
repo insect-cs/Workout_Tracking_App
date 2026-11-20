@@ -3,13 +3,13 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/workout_models.dart';
+import 'api_key_service.dart';
 import 'youtube_service.dart';
 
 class GeminiService {
-  static const String _apiKey =
-      String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
-  static const String _apiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent';
+  /// Every call uses the key/endpoint the user validated in the Keys page.
+  static Future<ActiveAiConfig> _config() =>
+      ApiKeyStore.instance.requireActiveConfig();
 
   /// Calls the Gemini API and returns a [WorkoutModel] with AI-generated exercises.
   static Future<WorkoutModel> generateWorkout({
@@ -19,13 +19,7 @@ class GeminiService {
     required String difficulty,
     required String equipment,
   }) async {
-    if (_apiKey.isEmpty) {
-      throw const GeminiException(
-        'GEMINI_API_KEY is not configured. Run with '
-        '--dart-define-from-file=env.json or '
-        '--dart-define=GEMINI_API_KEY=...',
-      );
-    }
+    final config = await _config();
 
     final focusStr = muscles.isEmpty ? 'Full Body' : muscles.join(' & ');
 
@@ -90,11 +84,11 @@ RULES:
       },
     };
 
-    final uri = Uri.parse('$_apiUrl?key=$_apiKey');
+    final uri = Uri.parse(config.generateUrl);
 
     final response = await http.post(
       uri,
-      headers: {'Content-Type': 'application/json'},
+      headers: geminiHeaders(config.key),
       body: jsonEncode(requestBody),
     );
 

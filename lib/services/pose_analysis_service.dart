@@ -9,6 +9,8 @@ import 'package:camera/camera.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import 'api_key_service.dart';
+
 class PoseAnalysisResult {
   final String exerciseName;
   final String confidence;
@@ -46,11 +48,6 @@ class PoseKeypoint {
 }
 
 class PoseAnalysisService {
-  static const String _apiKey =
-      String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
-  static const String _apiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent';
-
   static PoseDetector? _mlkitPoseDetector;
 
   static PoseDetector get mlkitDetector {
@@ -313,13 +310,7 @@ class PoseAnalysisService {
     String mimeType = 'image/jpeg',
     List<PoseKeypoint>? predetectedPoints,
   }) async {
-    if (_apiKey.isEmpty) {
-      throw Exception(
-        'GEMINI_API_KEY is not configured. Run with '
-        '--dart-define-from-file=env.json or '
-        '--dart-define=GEMINI_API_KEY=...',
-      );
-    }
+    final config = await ApiKeyStore.instance.requireActiveConfig();
 
     final base64Image = base64Encode(bytes);
 
@@ -382,11 +373,11 @@ Return ONLY valid JSON (no markdown, no backticks):
       'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 1024},
     };
 
-    final uri = Uri.parse('$_apiUrl?key=$_apiKey');
+    final uri = Uri.parse(config.generateUrl);
     final response = await http
         .post(
           uri,
-          headers: {'Content-Type': 'application/json'},
+          headers: geminiHeaders(config.key),
           body: jsonEncode(requestBody),
         )
         .timeout(

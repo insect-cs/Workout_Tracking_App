@@ -13,15 +13,20 @@ void main() {
     await tester.pumpWidget(const WorkoutTrackingApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Exercise Catalog'), findsOneWidget,
-        reason: 'Home screen should render');
+    expect(
+      find.text('Exercise Catalog'),
+      findsOneWidget,
+      reason: 'Home screen should render',
+    );
     expect(find.byType(NavigationBar), findsOneWidget);
 
     final tabs = <String, int>{
-      'Generate': 1,
-      'Saved': 2,
-      'Logger': 3,
-      'Pose': 4,
+      'Plan': 1,
+      'Calories': 2,
+      'Generate': 3,
+      'Saved': 4,
+      'Logger': 5,
+      'Pose': 6,
       'Home': 0,
     };
 
@@ -49,8 +54,11 @@ void main() {
       );
     }
 
-    expect(find.text('Exercise Catalog'), findsOneWidget,
-        reason: 'Home should render after tab round-trip');
+    expect(
+      find.text('Exercise Catalog'),
+      findsOneWidget,
+      reason: 'Home should render after tab round-trip',
+    );
 
     // Home theme toggle switches the global Material 3 theme mode.
     expect(ThemeController.isDark, isTrue);
@@ -62,5 +70,23 @@ void main() {
     await tester.tap(find.byTooltip('Switch to dark mode'));
     await tester.pumpAndSettle();
     expect(ThemeController.mode.value, ThemeMode.dark);
+
+    // Home card opens the Diet planner; its back button returns to Home.
+    await tester.tap(find.text('DIET PLANNER'));
+    await tester.pumpAndSettle();
+    expect(find.text('Daily food & water planner'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    expect(find.text('Exercise Catalog'), findsOneWidget);
+
+    // Home card opens the Keys page; its back button returns to Home.
+    await tester.tap(find.text('KEYS'));
+    await tester.pumpAndSettle();
+    expect(find.text('Manage AI keys and active endpoint'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    expect(find.text('Exercise Catalog'), findsOneWidget);
   });
 }

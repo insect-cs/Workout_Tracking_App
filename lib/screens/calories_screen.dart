@@ -1,0 +1,925 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../models/calories_models.dart';
+import '../services/calories_service.dart';
+import '../theme/app_colors.dart';
+import '../widgets/api_key_dialog.dart';
+
+class _CalorieFormData {
+  _CalorieFormData();
+
+  final TextEditingController ageController = TextEditingController(text: '30');
+  final TextEditingController heightController = TextEditingController(
+    text: '175',
+  );
+  final TextEditingController weightController = TextEditingController(
+    text: '70',
+  );
+
+  String gender = 'Male';
+  String activity = CalorieMath.activityLevels.first;
+
+  void dispose() {
+    ageController.dispose();
+    heightController.dispose();
+    weightController.dispose();
+  }
+}
+
+/// Calories section: weekly maintenance-calorie estimates (with activity
+/// level) and BMI results. Both CTAs are authenticated against the Gemini key
+/// before any result is produced.
+class CaloriesScreen extends StatefulWidget {
+  final VoidCallback? onBack;
+
+  const CaloriesScreen({super.key, this.onBack});
+
+  @override
+  State<CaloriesScreen> createState() => _CaloriesScreenState();
+}
+
+class _CaloriesScreenState extends State<CaloriesScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  final _CalorieFormData _form = _CalorieFormData();
+
+  bool _isGenerating = false;
+  String? _error;
+  WeeklyCalorieEstimate? _weeklyResult;
+  BmiEstimate? _bmiResult;
+  int _lastTabIndex = 0;
+
+  static const List<String> _genders = ['Male', 'Female', 'Other'];
+  static const Map<String, String> _shortActivityLabels = {
+    'Little or no exercise': 'Sedentary',
+    '1-3 days/week (Light)': 'Light',
+    '4-5 days/week (moderate)': 'Moderate',
+    'intense exercise 3-4 days/week (active)': 'Active',
+    'intense exercise 6-7 days/week (very active)': 'Very active',
+    'very intense exercise daily (Extra active)': 'Extra active',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.index != _lastTabIndex) {
+        _lastTabIndex = _tabController.index;
+        if (mounted) setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _form.dispose();
+    super.dispose();
+  }
+
+  bool get _isWeekly => _tabController.index == 0;
+
+  String get _generateLabel =>
+      _isWeekly ? 'Generate Estimate' : 'Generate results';
+
+  Future<void> _generate() async {
+    if (_isGenerating) return;
+
+    if (!await ensureAiAccess(context)) return;
+    if (!mounted) return;
+
+    final age = int.tryParse(_form.ageController.text.trim()) ?? 0;
+    final height = double.tryParse(_form.heightController.text.trim()) ?? 0;
+    final weight = double.tryParse(_form.weightController.text.trim()) ?? 0;
+
+    if (age < 10 || age > 120) {
+      setState(() => _error = 'Enter a valid age between 10 and 120 years.');
+      return;
+    }
+    if (height < 100 || height > 250) {
+      setState(() => _error = 'Enter a valid height between 100 and 250 cm.');
+      return;
+    }
+    if (weight < 20 || weight > 400) {
+      setState(() => _error = 'Enter a valid weight between 20 and 400 kg.');
+      return;
+    }
+
+    final profile = CalorieProfile(
+      age: age,
+      gender: _form.gender,
+      heightCm: height,
+      weightKg: weight,
+      activity: _form.activity,
+    );
+
+    setState(() {
+      _isGenerating = true;
+      _error = null;
+    });
+
+    try {
+      if (_isWeekly) {
+        final result = await CaloriesService.generateWeeklyEstimate(profile);
+        if (!mounted) return;
+        setState(() {
+          _weeklyResult = result;
+          _isGenerating = false;
+        });
+      } else {
+        final result = await CaloriesService.generateBmiEstimate(profile);
+        if (!mounted) return;
+        setState(() {
+          _bmiResult = result;
+          _isGenerating = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isGenerating = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasResult = _weeklyResult != null || _bmiResult != null;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: Column(
+              children: [
+                _buildHeader(),
+                if (!hasResult) _buildTabBar(),
+                Expanded(
+                  child: hasResult
+                      ? (_weeklyResult != null
+                            ? _buildWeeklyResult(_weeklyResult!)
+                            : _buildBmiResult(_bmiResult!))
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildForm(showActivity: true),
+                            _buildForm(showActivity: false),
+                          ],
+                        ),
+                ),
+                if (!hasResult) _buildBottomBar(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          if (widget.onBack != null) ...[
+            InkWell(
+              onTap: widget.onBack,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLow,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Icon(
+                  Icons.arrow_back,
+                  color: AppColors.textLight,
+                  size: 18,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'CALORIES',
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                    color: AppColors.textWhite,
+                  ),
+                ),
+                Text(
+                  'AI Calorie & BMI Estimator',
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: AppColors.textSlate,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.orangeSoft,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.orangeBorder),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.local_fire_department,
+                  color: AppColors.primaryOrange,
+                  size: 14,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'ESTIMATOR',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryOrange,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      color: AppColors.surface,
+      child: TabBar(
+        controller: _tabController,
+        tabs: const [
+          Tab(text: 'Weekly estimate'),
+          Tab(text: 'BMI calculate'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForm({required bool showActivity}) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+      children: [
+        _buildIntroCard(showActivity),
+        const SizedBox(height: 18),
+        _buildNumberField(
+          label: 'AGE',
+          controller: _form.ageController,
+          hint: 'e.g., 30',
+          suffix: 'years',
+          decimals: false,
+        ),
+        const SizedBox(height: 18),
+        _buildGenderSection(),
+        const SizedBox(height: 18),
+        _buildNumberField(
+          label: 'HEIGHT',
+          controller: _form.heightController,
+          hint: 'e.g., 175',
+          suffix: 'cm',
+          decimals: true,
+        ),
+        const SizedBox(height: 18),
+        _buildNumberField(
+          label: 'WEIGHT',
+          controller: _form.weightController,
+          hint: 'e.g., 70',
+          suffix: 'kg',
+          decimals: true,
+        ),
+        if (showActivity) ...[
+          const SizedBox(height: 18),
+          _buildActivitySection(),
+        ],
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildIntroCard(bool showActivity) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.orangeSoft,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              showActivity ? Icons.calendar_month : Icons.monitor_heart,
+              color: AppColors.primaryOrange,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              showActivity
+                  ? 'Gemini will estimate your daily and weekly maintenance '
+                        'calories from your profile and activity level.'
+                  : 'Gemini will interpret your BMI and suggest a healthy '
+                        'weight range based on your profile.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppColors.textSlate,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: GoogleFonts.spaceGrotesk(
+        fontSize: 11,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1.2,
+        color: AppColors.textWhite,
+      ),
+    );
+  }
+
+  Widget _buildNumberField({
+    required String label,
+    required TextEditingController controller,
+    required String hint,
+    required String suffix,
+    required bool decimals,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel(label),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          keyboardType: decimals
+              ? const TextInputType.numberWithOptions(decimal: true)
+              : TextInputType.number,
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textWhite,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            suffixText: suffix,
+            suffixStyle: GoogleFonts.inter(
+              fontSize: 12,
+              color: AppColors.textSlate,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGenderSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel('GENDER'),
+        const SizedBox(height: 8),
+        SegmentedButton<String>(
+          segments: [
+            for (final gender in _genders)
+              ButtonSegment<String>(value: gender, label: Text(gender)),
+          ],
+          selected: {_form.gender},
+          onSelectionChanged: (selection) {
+            if (selection.isNotEmpty) {
+              setState(() => _form.gender = selection.first);
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivitySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel('ACTIVITY LEVEL'),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          initialValue: _form.activity,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.directions_run),
+          ),
+          items: [
+            for (final level in CalorieMath.activityLevels)
+              DropdownMenuItem<String>(
+                value: level,
+                child: Text(
+                  level,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(fontSize: 12),
+                ),
+              ),
+          ],
+          selectedItemBuilder: (context) {
+            return [
+              for (final level in CalorieMath.activityLevels)
+                Text(
+                  _shortActivityLabels[level] ?? level,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+            ];
+          },
+          onChanged: (value) {
+            if (value != null) setState(() => _form.activity = value);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_error != null) _buildErrorBanner(_error!),
+          if (_error != null) const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: FilledButton(
+              onPressed: _isGenerating ? null : _generate,
+              child: _isGenerating
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              AppColors.textWhite.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Gemini is calculating…',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.auto_awesome, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          _generateLabel,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward, size: 18),
+                      ],
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.rose.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, color: AppColors.rose, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: AppColors.rose,
+                height: 1.4,
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: () => setState(() => _error = null),
+            child: Icon(Icons.close, color: AppColors.rose, size: 16),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resultScaffold({
+    required String badge,
+    required List<Widget> children,
+  }) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.orangeSoft,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.orangeBorder),
+              ),
+              child: Text(
+                badge,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaryOrange,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              onPressed: () => setState(() {
+                _weeklyResult = null;
+                _bmiResult = null;
+              }),
+              tooltip: 'Edit details',
+              icon: Icon(Icons.edit_outlined, color: AppColors.textSlate),
+            ),
+          ],
+        ),
+        ...children,
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: () => setState(() {
+              _weeklyResult = null;
+              _bmiResult = null;
+            }),
+            icon: const Icon(Icons.refresh),
+            label: Text(
+              'Create another estimate',
+              style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWeeklyResult(WeeklyCalorieEstimate result) {
+    return _resultScaffold(
+      badge: 'WEEKLY ESTIMATE',
+      children: [
+        const SizedBox(height: 8),
+        Text(
+          'Your Calorie Estimate',
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textWhite,
+          ),
+        ),
+        if (result.summary.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            result.summary,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: AppColors.textSlate,
+              height: 1.5,
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(child: _statCard('BMR', '${result.bmr}', 'kcal/day')),
+            const SizedBox(width: 10),
+            Expanded(child: _statCard('TDEE', '${result.tdee}', 'kcal/day')),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _statCard('DAILY TARGET', '${result.dailyTarget}', 'kcal'),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _statCard(
+                'WEEKLY TARGET',
+                '${result.weeklyTarget}',
+                'kcal',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        _sectionLabel('7-DAY BREAKDOWN'),
+        const SizedBox(height: 10),
+        ...result.days.map(
+          (day) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.cardSurface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        day.day,
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textWhite,
+                        ),
+                      ),
+                      if (day.note.isNotEmpty)
+                        Text(
+                          day.note,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppColors.textSlate,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Text(
+                  '${day.calories} kcal',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryOrange,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (result.tips.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _sectionLabel('TIPS'),
+          const SizedBox(height: 8),
+          ...result.tips.map(
+            (tip) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.tips_and_updates_outlined,
+                    color: AppColors.emerald,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      tip,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: AppColors.textSlate,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildBmiResult(BmiEstimate result) {
+    return _resultScaffold(
+      badge: 'BMI RESULT',
+      children: [
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: AppColors.orangeSoft,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.orangeBorder, width: 2),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      result.bmi.toStringAsFixed(1),
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryOrange,
+                      ),
+                    ),
+                    Text(
+                      'BMI',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryOrange,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    result.category,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textWhite,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Healthy range for your height',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppColors.textSlate,
+                    ),
+                  ),
+                  Text(
+                    result.healthyWeightRange,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.emerald,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        if (result.interpretation.isNotEmpty) ...[
+          _sectionLabel('INTERPRETATION'),
+          const SizedBox(height: 8),
+          Text(
+            result.interpretation,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: AppColors.textSlate,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
+        if (result.recommendations.isNotEmpty) ...[
+          _sectionLabel('RECOMMENDATIONS'),
+          const SizedBox(height: 8),
+          ...result.recommendations.map(
+            (tip) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    color: AppColors.emerald,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      tip,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: AppColors.textSlate,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _statCard(String label, String value, String unit) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textSlate,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.primaryOrange,
+            ),
+          ),
+          Text(
+            unit,
+            style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSlate),
+          ),
+        ],
+      ),
+    );
+  }
+}

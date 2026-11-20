@@ -18,6 +18,7 @@ import '../services/pose_analysis_service.dart';
 import '../theme/app_colors.dart';
 import '../web/web_pose.dart';
 import '../widgets/pose_skeleton_painter.dart';
+import '../widgets/api_key_dialog.dart';
 
 class PoseTrackingScreen extends StatefulWidget {
   final VoidCallback onBackToHome;
@@ -863,6 +864,13 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         _selectedMediaBytes == null &&
         _selectedMediaFile == null) {
       return;
+    }
+
+    // Live video tracking runs locally; still-image analysis uses Gemini and
+    // needs a validated key.
+    if (!_isVideo) {
+      final allowed = await ensureAiAccess(context);
+      if (!allowed || !mounted) return;
     }
 
     setState(() {

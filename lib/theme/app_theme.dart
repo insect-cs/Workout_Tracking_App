@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'app_colors.dart';
+import 'theme_controller.dart';
 
 /// Material 3 theme for the whole app.
 ///
@@ -16,7 +16,7 @@ abstract final class AppTheme {
   static ThemeData get dark => _build(Brightness.dark);
 
   static ColorScheme colorScheme(Brightness brightness) => ColorScheme.fromSeed(
-    seedColor: AppColors.seed,
+    seedColor: ThemeController.seed.value,
     brightness: brightness,
     dynamicSchemeVariant: DynamicSchemeVariant.vibrant,
   );
