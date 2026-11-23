@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:workout_app/models/diet_models.dart';
 import 'package:workout_app/screens/diet_screen.dart';
 import 'package:workout_app/services/api_key_service.dart';
+import 'package:workout_app/services/diet_export_service.dart';
 import 'package:workout_app/services/local_store.dart';
 import 'package:workout_app/state/diet_state.dart';
 
@@ -183,5 +184,149 @@ void main() {
 
     expect(find.text('Add Gemini API key'), findsOneWidget);
     expect(find.text('Validate with Gemini'), findsOneWidget);
+  });
+
+  test('rest activities track sleep and survive JSON round trips', () {
+    final entry = DietEntry(
+      id: 'r1',
+      slotHour: 22,
+      type: DietActivityType.rest,
+      label: 'Rest',
+      detail: '7h 30m',
+      sleepMinutes: 450,
+      createdAt: DateTime(2026, 1, 5, 22),
+    );
+    final day = DietDay(entries: [entry]);
+
+    expect(day.sleepMinutes, 450);
+    final restoredEntry = DietEntry.fromJson(entry.toJson());
+    expect(restoredEntry.type, DietActivityType.rest);
+    expect(restoredEntry.sleepMinutes, 450);
+    expect(DietDay.fromJson(day.toJson()).sleepMinutes, 450);
+  });
+
+  test('weekly goals deduct each day and highlight days at 50 percent', () {
+    final store = DietState.instance;
+    final monday = DateTime(2026, 1, 5);
+    final tuesday = DateTime(2026, 1, 6);
+
+    expect(store.weekGoals(monday).calorieGoal, kDefaultWeeklyCalorieGoal);
+    expect(store.weekGoals(monday).waterGoalMl, kDefaultWeeklyWaterGoalMl);
+
+    store.setWeekGoals(monday, calorieGoal: 12000, waterGoalMl: 14000);
+    store.addEntry(
+      monday,
+      DietEntry(
+        id: 'f1',
+        slotHour: 9,
+        type: DietActivityType.food,
+        label: 'Oats',
+        detail: 'Veg • 1 bowl',
+        calories: 600,
+        createdAt: monday,
+      ),
+    );
+    store.addEntry(
+      tuesday,
+      DietEntry(
+        id: 'w1',
+        slotHour: 10,
+        type: DietActivityType.water,
+        label: 'Water',
+        detail: '1250 ml',
+        waterMl: 1250,
+        createdAt: tuesday,
+      ),
+    );
+
+    final consumed = store.weekConsumed(tuesday);
+    expect(consumed.calories, 600);
+    expect(consumed.waterMl, 1250);
+    expect(store.weekGoals(tuesday).calorieGoal, 12000);
+    expect(store.day(monday).isGoalHalfMet, isFalse);
+    expect(store.day(tuesday).isGoalHalfMet, isTrue);
+
+    final summary = store.buildSummary(tuesday);
+    expect(summary.scope, 'All activities up to now');
+    expect(summary.totalCalories, 600);
+    expect(summary.totalWaterMl, 1250);
+    expect(summary.daysGoalMet, 1);
+    expect(summary.entries.length, 2);
+  });
+
+  test('diet summary CSV contains daily breakdown and activity log', () {
+    final store = DietState.instance;
+    final today = DateTime(2026, 1, 5);
+    store.addEntry(
+      today,
+      DietEntry(
+        id: 'r1',
+        slotHour: 22,
+        type: DietActivityType.rest,
+        label: 'Rest',
+        detail: '7h 30m',
+        sleepMinutes: 450,
+        createdAt: today,
+      ),
+    );
+
+    final csv = DietExportService.buildCsv(store.buildSummary(today));
+    expect(csv, contains('Diet Summary Export'));
+    expect(csv, contains('DAILY BREAKDOWN'));
+    expect(csv, contains('ACTIVITY LOG'));
+    expect(csv, contains('Rest'));
+    expect(csv, contains('450'));
+  });
+
+  testWidgets('diet screen exposes weekly goals, summary and rest activity', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 3600);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(MaterialApp(home: DietScreen(onBack: () {})));
+    await tester.pumpAndSettle();
+
+    expect(find.text('WEEKLY GOALS'), findsOneWidget);
+    expect(find.text('Save week goals'), findsOneWidget);
+    expect(find.text('DIET SUMMARY'), findsOneWidget);
+
+    await tester.tap(find.text('DIET SUMMARY'));
+    await tester.pumpAndSettle();
+    expect(find.text('Export as CSV'), findsOneWidget);
+    expect(find.text('Export as PDF'), findsOneWidget);
+    final sheetContext = tester.element(find.text('Export as CSV'));
+    Navigator.of(sheetContext).pop();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('23:00'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rest'));
+    await tester.pumpAndSettle();
+
+    final hoursField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.hintText == 'e.g., 7',
+    );
+    final minutesField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.hintText == 'e.g., 30',
+    );
+    await tester.enterText(hoursField, '7');
+    await tester.enterText(minutesField, '30');
+    await tester.pump();
+    await tester.tap(find.text('Save to this slot'));
+    await tester.pumpAndSettle();
+
+    final today = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    final day = DietState.instance.day(today);
+    expect(day.sleepMinutes, 450);
+    expect(day.entriesForSlot(23).single.type, DietActivityType.rest);
   });
 }

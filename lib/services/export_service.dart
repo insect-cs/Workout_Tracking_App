@@ -251,13 +251,13 @@ class ExportService {
   static Future<String> saveCsv(ExportData data) async {
     final name = _fileName(data.timeframe, 'csv');
     final content = buildCsv(data);
-    return _save(name, utf8.encode(content), 'text/csv');
+    return saveBytes(name, utf8.encode(content), 'text/csv');
   }
 
   static Future<String> savePdf(ExportData data) async {
     final name = _fileName(data.timeframe, 'pdf');
     final bytes = await buildPdf(data);
-    return _save(name, bytes, 'application/pdf');
+    return saveBytes(name, bytes, 'application/pdf');
   }
 
   static String _fileName(String timeframe, String ext) {
@@ -267,7 +267,13 @@ class ExportService {
     return 'progress_${timeframe.toLowerCase()}_$stamp.$ext';
   }
 
-  static Future<String> _save(String name, List<int> bytes, String mime) async {
+  /// Writes export bytes to Documents on mobile/desktop, or triggers a browser
+  /// download on web. Shared with the diet summary exporter.
+  static Future<String> saveBytes(
+    String name,
+    List<int> bytes,
+    String mime,
+  ) async {
     if (kIsWeb) {
       // Trigger a browser download via a Blob + temporary <a> element.
       downloadBytes(name, bytes, mime);

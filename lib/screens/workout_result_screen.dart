@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../services/video_launcher_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_hero_tags.dart';
 import '../state/workout_state.dart';
@@ -758,77 +758,34 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
       targetUrl = await YouTubeService.getExactVideoUrl(ex.name);
     }
 
-    final url = Uri.parse(targetUrl);
+    final opened = await VideoLaunchService.open(targetUrl);
+    if (opened || !mounted) return;
 
-    try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppColors.cardSurface,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(color: Color(0xFFFF4D4D)),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.cardSurface,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFFFF4D4D)),
+        ),
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Color(0xFFFF6B6B), size: 18),
+            const SizedBox(width: 10),
+            Text(
+              'Could not open video player.',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textWhite,
               ),
-              content: Row(
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    color: Color(0xFFFF6B6B),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Could not open video player.',
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textWhite,
-                    ),
-                  ),
-                ],
-              ),
-              duration: const Duration(seconds: 2),
             ),
-          );
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: AppColors.cardSurface,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: Color(0xFFFF4D4D)),
-            ),
-            content: Row(
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  color: Color(0xFFFF6B6B),
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Failed to launch video.',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textWhite,
-                  ),
-                ),
-              ],
-            ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    }
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Widget _buildActionButtons(WorkoutModel workout) {

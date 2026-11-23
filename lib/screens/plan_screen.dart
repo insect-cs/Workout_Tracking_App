@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../models/plan_models.dart';
 import '../models/workout_models.dart';
 import '../services/local_store.dart';
 import '../services/plan_history_service.dart';
 import '../services/plan_service.dart';
+import '../services/video_launcher_service.dart';
 import '../services/youtube_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/api_key_dialog.dart';
@@ -1584,18 +1584,8 @@ class _PlanScreenState extends State<PlanScreen>
     if (url.isEmpty || url.contains('search_query')) {
       url = await YouTubeService.getExactVideoUrl(exercise.name);
     }
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else if (mounted) {
-        _showVideoError();
-      }
-    } catch (_) {
-      if (mounted) _showVideoError();
-    }
+    final opened = await VideoLaunchService.open(url);
+    if (!opened && mounted) _showVideoError();
   }
 
   void _showVideoError() {
