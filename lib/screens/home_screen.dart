@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_hero_tags.dart';
 import '../theme/theme_controller.dart';
+import '../state/session_state.dart';
 import '../state/workout_state.dart';
 import '../models/workout_models.dart';
 
@@ -291,13 +292,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'WELCOME BACK, ATHLETE',
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.5,
-            color: AppColors.textSlate,
+        ValueListenableBuilder<String>(
+          valueListenable: SessionState.displayName,
+          builder: (context, displayName, _) => Text(
+            displayName.trim().isEmpty
+                ? 'WELCOME BACK, ATHLETE'
+                : 'WELCOME BACK, ${displayName.trim().toUpperCase()}',
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.5,
+              color: AppColors.textSlate,
+            ),
           ),
         ),
         const SizedBox(height: 2),

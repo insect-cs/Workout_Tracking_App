@@ -30,11 +30,18 @@ abstract final class SessionState {
   );
   static final ValueNotifier<bool> signedIn = ValueNotifier<bool>(false);
 
+  /// Name chosen by a new user. Stored with the session so it survives a
+  /// sign-out and a full app restart.
+  static final ValueNotifier<String> displayName = ValueNotifier<String>('');
+
   static Map<String, dynamic>? _session;
 
   static bool get hasSession => _session != null;
   static bool get isSignedIn => signedIn.value;
   static bool get canSignIn => _session == null;
+
+  /// Display name for the signed-in profile, or an empty string for guests.
+  static String get name => displayName.value;
 
   static Future<void> ensureLoaded() async {
     await LocalStore.instance.ensureLoaded();
@@ -45,10 +52,14 @@ abstract final class SessionState {
     );
     kind.value = restored;
     signedIn.value = _session?['signedIn'] == true;
+    displayName.value = restored == SessionKind.newUser
+        ? (_session?['name'] as String? ?? '')
+        : '';
   }
 
   /// Creates the only allowed session. Returns false if one already exists.
-  static Future<bool> signIn(SessionKind selected) async {
+  /// [name] is the display name entered by a new user on the welcome page.
+  static Future<bool> signIn(SessionKind selected, {String? name}) async {
     if (_session != null) return false;
 
     final namespace = _storageName(selected);
@@ -69,13 +80,18 @@ abstract final class SessionState {
     }
     await _reloadAppState(selected);
 
+    final storedName = selected == SessionKind.newUser
+        ? (name?.trim() ?? '')
+        : '';
     _session = {
       'kind': namespace,
       'signedIn': true,
+      'name': storedName,
       'createdAt': DateTime.now().toIso8601String(),
     };
     await LocalStore.instance.writeGlobal(LocalStore.sessionKey, _session);
     kind.value = selected;
+    displayName.value = storedName;
     signedIn.value = true;
     await LocalStore.instance.flush();
     return true;
@@ -99,6 +115,7 @@ abstract final class SessionState {
     await LocalStore.instance.deleteGlobal(LocalStore.sessionKey);
     _session = null;
     kind.value = null;
+    displayName.value = '';
     signedIn.value = false;
     LocalStore.instance.setNamespace(LocalStore.guestNamespace);
     await LocalStore.instance.flush();
@@ -117,6 +134,7 @@ abstract final class SessionState {
   static void resetForTesting() {
     _session = null;
     kind.value = null;
+    displayName.value = '';
     signedIn.value = false;
     LocalStore.instance.setNamespace(LocalStore.guestNamespace);
   }

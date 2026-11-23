@@ -1,8 +1,12 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:workout_app/main.dart';
 import 'package:workout_app/services/api_key_service.dart';
+import 'package:workout_app/screens/login_screen.dart';
 import 'package:workout_app/services/local_store.dart';
+import 'package:workout_app/services/update_service.dart';
 import 'package:workout_app/state/session_state.dart';
 import 'package:workout_app/state/workout_state.dart';
 import 'package:workout_app/theme/theme_controller.dart';
@@ -25,6 +29,22 @@ void main() {
     await tester.pumpWidget(const WorkoutTrackingApp());
     await tester.pumpAndSettle();
     expect(find.text('Choose your session'), findsOneWidget);
+  }
+
+  /// Selects the new-user card, then finishes the name-entry page.
+  Future<void> createNewUser(
+    WidgetTester tester, {
+    String name = 'Alex',
+  }) async {
+    await tester.tap(find.text('Continue as new user'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continue as new user'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('name-field')), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('name-field')), name);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('name-next')));
+    await tester.pumpAndSettle();
   }
 
   testWidgets('guest can sign in but can only leave via sign out', (
@@ -101,8 +121,7 @@ void main() {
       isNotNull,
     );
 
-    await tester.tap(find.text('Continue as new user'));
-    await tester.pumpAndSettle();
+    await createNewUser(tester);
 
     expect(SessionState.kind.value, SessionKind.newUser);
     expect(find.text('Exercise Catalog'), findsOneWidget);
@@ -116,8 +135,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.text('Continue as new user'));
-    await tester.pumpAndSettle();
+    await createNewUser(tester);
 
     expect(SessionState.kind.value, SessionKind.newUser);
     expect(WorkoutState.instance.savedWorkouts, isEmpty);
@@ -134,5 +152,188 @@ void main() {
           .onPressed,
       isNull,
     );
+  });
+
+  testWidgets('welcome cards select via wheel, swipe, keys and tap', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+
+    expect(find.byKey(const Key('session-dots')), findsNothing);
+    bool highlighted(int index) {
+      final button = tester.widget<ButtonStyleButton>(
+        find.byKey(Key('session-option-$index')),
+      );
+      return button.style?.backgroundColor?.resolve(const <WidgetState>{}) ==
+          const Color(0xFFFFB899);
+    }
+
+    expect(highlighted(0), isTrue);
+    expect(highlighted(1), isFalse);
+    expect(
+      tester.widget<Text>(find.text('Continue as guest')).style?.color,
+      const Color(0xFF2B1109),
+    );
+
+    // Mouse wheel down highlights the next card.
+    await tester.handlePointerEventRecord([
+      PointerEventRecord(Duration.zero, [
+        PointerScrollEvent(
+          kind: PointerDeviceKind.mouse,
+          device: 1,
+          position: tester.getCenter(find.byKey(const Key('session-selector'))),
+          scrollDelta: const Offset(0, 120),
+        ),
+      ]),
+    ]);
+    await tester.pumpAndSettle();
+    expect(highlighted(0), isFalse);
+    expect(highlighted(1), isTrue);
+
+    // Arrow up highlights the previous card.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(highlighted(0), isTrue);
+    expect(highlighted(1), isFalse);
+
+    // Swipe up highlights the next card.
+    await tester.drag(
+      find.byKey(const Key('session-selector')),
+      const Offset(0, -80),
+    );
+    await tester.pumpAndSettle();
+    expect(highlighted(1), isTrue);
+
+    // Tapping an unhighlighted card selects it without signing in.
+    await tester.tap(find.byKey(const Key('session-option-0')));
+    await tester.pumpAndSettle();
+    expect(highlighted(0), isTrue);
+    expect(SessionState.isSignedIn, isFalse);
+
+    // Tapping the highlighted card confirms it.
+    await tester.tap(find.byKey(const Key('session-option-0')));
+    await tester.pumpAndSettle();
+    expect(SessionState.kind.value, SessionKind.guest);
+    expect(SessionState.isSignedIn, isTrue);
+  });
+
+  testWidgets('Enter confirms the highlighted session card', (tester) async {
+    await pumpApp(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('name-field')), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('name-field')), 'Taylor');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('name-next')));
+    await tester.pumpAndSettle();
+
+    expect(SessionState.kind.value, SessionKind.newUser);
+    expect(SessionState.isSignedIn, isTrue);
+  });
+
+  testWidgets('new user name updates welcome text and appears on Home', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('Continue as new user'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continue as new user'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('welcome-name')), findsOneWidget);
+    expect(find.text('Welcome'), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.byKey(const Key('name-next'))).onPressed,
+      isNull,
+    );
+
+    await tester.enterText(find.byKey(const Key('name-field')), 'Sam');
+    await tester.pumpAndSettle();
+    expect(find.text('Welcome, Sam'), findsOneWidget);
+    expect(SessionState.isSignedIn, isFalse);
+
+    await tester.tap(find.byKey(const Key('name-next')));
+    await tester.pumpAndSettle();
+
+    expect(SessionState.kind.value, SessionKind.newUser);
+    expect(SessionState.name, 'Sam');
+    expect(find.text('WELCOME BACK, SAM'), findsOneWidget);
+  });
+
+  testWidgets('check for updates button shows the GitHub release', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LoginScreen(
+          updateChecker: () async => const AppUpdate(
+            latestVersion: '3.0.0',
+            releaseName: 'Big release',
+            releaseNotes: 'Faster app',
+            releaseUrl: 'https://github.com/x/releases',
+            apkUrl: null,
+            isNewer: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const Key('check-for-updates'));
+    expect(button, findsOneWidget);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Update available'), findsOneWidget);
+    expect(
+      find.text('Version 3.0.0 is available. You have 1.1.0.'),
+      findsOneWidget,
+    );
+    expect(find.text('Big release'), findsOneWidget);
+    expect(find.text('Faster app'), findsOneWidget);
+    expect(find.byKey(const Key('update-open')), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Later'));
+    await tester.pumpAndSettle();
+    expect(find.text('Update available'), findsNothing);
+  });
+
+  testWidgets('check for updates reports the current version', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LoginScreen(
+          updateChecker: () async => const AppUpdate(
+            latestVersion: '1.0.0',
+            releaseName: '',
+            releaseNotes: '',
+            releaseUrl: 'https://github.com/x/releases',
+            apkUrl: null,
+            isNewer: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('check-for-updates')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('You’re up to date'), findsOneWidget);
+    expect(find.byKey(const Key('update-open')), findsNothing);
   });
 }
