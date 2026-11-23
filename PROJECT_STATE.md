@@ -4,9 +4,9 @@
 > Read this file at the start of any new session to restore context. Update it
 > after every meaningful change.
 >
-> **Last updated:** 2026-11-20 (security review, signed production APK,
-> GitHub release v1.0.0 published, Android 16 startup-crash fix verified;
-> 55/55 tests passing, repo clean and pushed)
+> **Last updated:** 2026-11-23 (Android video launch fix, live history with
+> video, welcome cards + new-user name page, WT launcher name, GitHub update
+> check, pose console fixes; tests passing)
 > **Session model:** Each new feature/bugfix session appends to §5 Task Log.
 
 ---
@@ -620,6 +620,25 @@ flutter build web --release
 - **Result:** `flutter analyze --no-pub`: No issues found. `flutter test`:
   32/32 passed.
 
+### 2026-11-23 — Diet weekly goals, summary export, day status and Rest
+- **What:** Added editable **weekly calorie/water goals** (default 14000 kcal /
+  17500 ml = 7 × daily defaults) stored per Monday. All daily food/water
+  activities now also deduct from the week's remaining goals. A **THIS WEEK**
+  strip highlights each day green when 50%+ of either daily goal is met, red
+  otherwise. Both goal cards show their seed values as `DEFAULT` data with a
+  Restore action. A **DIET SUMMARY** button opens a bottom sheet with totals for
+  everything logged up to now (calories, water, sleep, days at 50%+, activity
+  counts) plus CSV/PDF export. The time-slot editor gained a **Rest** activity
+  type that records sleep duration and feeds daily/weekly sleep totals.
+- **Files:** `lib/models/diet_models.dart` (rest type, sleepMinutes, week goals,
+  summary DTOs), `lib/state/diet_state.dart` (weekly goal persistence and
+  weekly consumption/summary), `lib/screens/diet_screen.dart` (weekly goals
+  card, week strip, summary sheet, Rest editor),
+  `lib/services/diet_export_service.dart` (new CSV/PDF exporter),
+  `lib/services/export_service.dart` (shared `saveBytes`),
+  `test/diet_test.dart` (4 new tests).
+- **Result:** `flutter analyze`: No issues found. `flutter test`: 59/59 passed.
+
 ### 2026-11-19 — App-wide validated API keys + Keys page
 - **What:** Removed the compile-time `GEMINI_API_KEY` requirement entirely.
   Every AI action (Generate workout, Plan, Calories, Diet food validation and
@@ -887,6 +906,161 @@ flutter build web --release
   tests pass; signature unchanged (`c12b84b5…00c63`). User is continuing to test
   and will report any further issues.
 
+### 2026-11-23 — Android video fix, live tracking history, icon and welcome cards
+- **What (video):** Fixed the Android **“Could not open video player.”** error.
+  Android 11+ package visibility hid browsers/YouTube from `canLaunchUrl`, and
+  local gallery picks could return `content://` URIs that `File()` could not
+  open. Added `<queries>` for HTTPS/YouTube intents, a shared
+  `VideoLaunchService` (YouTube app → external app → browser fallback without a
+  pre-flight `canLaunchUrl`), and `VideoPlayerController.contentUri` support in
+  the Pose video picker.
+- **What (live history):** History now lives inside the **Pose** screen as its
+  own **History** tab (there is no extra bottom-nav section). An explicit
+  **Save live tracking** button snapshots the active (or just-stopped) session
+  into device-local storage; stopping alone no longer saves tracked data, but a
+  recording with no detected pose is saved as a video-only “No live tracking”
+  entry. Saved sessions show reps, angles, duration, engine/camera, feedback,
+  the last detected skeleton and a playable video, with per-session delete and
+  Clear all. History is namespaced per signed-in profile and removed on session
+  deletion.
+- **What (icon):** Replaced the default Flutter launcher icon with a custom
+  orange-gradient dumbbell icon. Added legacy mipmap PNGs, round icons,
+  adaptive foregrounds, `mipmap-anydpi-v26` XML, background colour and source
+  `assets/icons/app_icon.png`; manifest now declares `android:roundIcon`.
+- **What (welcome):** Removed the dots/slider entirely. The two option cards
+  themselves are selectable with the mouse wheel, touch swipe, arrow keys or a
+  tap; tapping the highlighted card (or pressing Enter) confirms. The selected
+  card uses a peach fill with dark text so the guest option is readable. Fixed
+  the saved-profile label being clipped with `Expanded` + ellipsis, and kept
+  disabled card text readable instead of faded to 45%.
+- **Files:** `android/app/src/main/AndroidManifest.xml`, new
+  `android/app/src/main/res/mipmap-*/ic_launcher*.png`,
+  `mipmap-anydpi-v26/ic_launcher*.xml`, `values/ic_launcher_background.xml`,
+  `assets/icons/app_icon.png`; `lib/services/video_launcher_service.dart` (new),
+  `lib/services/live_tracking_history_service.dart` (new),
+  `lib/models/pose_history_models.dart` (new),
+  `lib/screens/live_tracking_history_screen.dart` (new),
+  `lib/screens/pose_tracking_screen.dart`, `lib/screens/workout_result_screen.dart`,
+  `lib/screens/plan_screen.dart`, `lib/screens/login_screen.dart`, tests
+  (`session_login_test.dart`, `app_smoke_test.dart`, `widget_test.dart`,
+  `local_persistence_test.dart`).
+- **Result:** `flutter analyze`: no issues. `flutter test`: 62/62 passed.
+  `flutter build apk --debug` and `flutter build web --release`: succeeded.
+
+### 2026-11-23 — Pose tracking console errors
+- **VideoFrame warning:** Web camera teardown could dispose the `CameraController`
+  while `camera_web` still had an in-flight MediaStreamTrackProcessor frame,
+  producing “A VideoFrame was garbage collected without being closed”. Camera
+  release now stops the image stream, waits briefly for the plugin to close the
+  frame, then disposes the controller.
+- **Unmounted context:** The Save snackbar's **View** action captured
+  `State.context`; if the page was popped first, the callback threw
+  “This widget has been unmounted”. It now captures a `BuildContext` while
+  mounted and checks `context.mounted` before using it. The same guard was added
+  around async image/camera pick flows and the video listener.
+- **Result:** `flutter analyze`: no issues. `flutter test`: 62/62 passed.
+  `flutter build web --release`: succeeded.
+
+### 2026-11-23 — Recorded live video in history + browser VideoFrame fix
+- **VideoFrame warning:** The remaining warning came from `camera_web`'s
+  `MediaStreamTrackProcessor`, which can leave an in-flight `VideoFrame` open
+  when the track stops. Before creating the web `CameraController`, the app now
+  removes `MediaStreamTrackProcessor` from `window`, so camera_web uses its
+  canvas frame path instead. No `VideoFrame` is allocated and the warning is
+  gone; `WebCameraCompat` is a no-op on native.
+- **Video capture:** Live sessions now record the camera stream alongside pose
+  detection. Stop finalises the recording: native copies it into app documents,
+  web stores base64 bytes (blob URLs do not survive reloads). History cards show
+  an inline player with play/pause, mute and scrubbing.
+- **No tracking:** Stopping a recorded session with no detected pose/reps
+  auto-saves a video-only entry titled **No live tracking** with the message
+  “No live tracking happened…”. Explicit Save still covers tracked sessions and
+  now finalises the recording first so the video is included.
+- **Files:** `lib/models/pose_history_models.dart`,
+  `lib/screens/pose_tracking_screen.dart`,
+  `lib/screens/live_tracking_history_screen.dart`,
+  `lib/services/pose_video_source*.dart`, `lib/web/web_camera_compat*.dart`,
+  tests (`widget_test.dart`, `local_persistence_test.dart`).
+- **Result:** `flutter analyze`: no issues. `flutter test`: 63/63 passed.
+  `flutter build web --release` and `flutter build apk --debug`: succeeded.
+
+### 2026-11-23 — Welcome cards replace selection dots
+- **What:** Removed the Guest / New user dots from the welcome screen. The two
+  cards themselves now act as the selector: mouse wheel/trackpad, touch swipe,
+  and up/down arrow keys change the highlight; tapping an unhighlighted card
+  selects it, and tapping the highlighted card (or pressing Enter) confirms the
+  session. Wheel events are claimed so a parent scroll view does not also move.
+- **Readability:** The highlighted card uses a peach fill with dark title,
+  subtitle and icon colours, so the guest card is no longer low-contrast.
+  Disabled cards keep their readable text.
+- **Files:** `lib/screens/login_screen.dart`, `test/session_login_test.dart`.
+- **Result:** `flutter analyze`: no issues. `flutter test`: 64/64 passed.
+
+### 2026-11-23 — Save snackbar fix
+- **Exception:** The Save snackbar's **View** action called
+  `DefaultTabController.of(context)` using the screen's own context, but the
+  `DefaultTabController` was a *descendant* created inside `build()`, so the
+  lookup threw “no DefaultTabController ancestor”. Because the exception fired
+  inside `SnackBarAction.onPressed`, Flutter never reached
+  `hideCurrentSnackBar()` and the message stayed on screen, blocking controls.
+- **Fix:** The screen now owns a `TabController` (with
+  `TickerProviderStateMixin`), passed directly to `TabBar` and `TabBarView`.
+  The **View** action calls `_poseTabController.animateTo(1)` with a `mounted`
+  guard — no inherited-widget lookup, so no exception. The snackbar also has an
+  explicit 3-second duration and `showCloseIcon: true` so it always clears.
+- **Files:** `lib/screens/pose_tracking_screen.dart`.
+- **Result:** `flutter analyze`: no issues. `flutter test`: 64/64 passed.
+
+### 2026-11-23 — Android launcher name
+- **What:** Changed the Android application label from “Workout Tracking” to
+  **WT** in `android/app/src/main/AndroidManifest.xml`. The debug/profile
+  manifests contain no label, so the release/debug launcher name is now WT.
+- **Result:** `flutter build apk --debug` succeeded; `aapt dump badging` confirms
+  `application: label='WT'`.
+
+### 2026-11-23 — New-user name entry page
+- **What:** Confirming **Continue as new user** now opens a dedicated name-entry
+  page instead of signing in immediately. The heading above the field is
+  “Welcome” and updates live to “Welcome, &lt;name&gt;” as the user types.
+  **Next** (enabled only for a non-empty name) creates the session with that
+  display name, pops the page and lands on Home. Guests skip this step.
+- **State:** `SessionState` gained a persistent `displayName` notifier stored in
+  the session map (restored on launch, cleared on delete). The Home greeting is
+  now “WELCOME BACK, &lt;NAME&gt;” for named new users and falls back to
+  “WELCOME BACK, ATHLETE” for guests.
+- **Files:** `lib/screens/name_entry_screen.dart` (new),
+  `lib/screens/login_screen.dart`, `lib/screens/home_screen.dart`,
+  `lib/state/session_state.dart`, `test/session_login_test.dart`.
+- **Result:** `flutter analyze`: no issues. `flutter test`: 65/65 passed.
+  `flutter build web --release` and `flutter build apk --debug`: succeeded.
+
+### 2026-11-23 — Check for updates on the login screen
+- **What:** Added a **Check for updates** button below the privacy text on the
+  login screen. It calls the GitHub Releases API for
+  `insect-cs/Workout_Tracking_App`, compares the latest tag with the app version
+  and shows a dialog: **Update available** (with release notes, tag and a
+  **Download** button that opens the `.apk` asset or release page) or
+  **You're up to date**. Network/API failures show a snackbar instead of
+  hanging; requests have a 10-second timeout and a User-Agent header.
+- **Files:** `lib/services/update_service.dart` (new; injectable client and
+  checker for tests), `lib/screens/login_screen.dart`,
+  `test/update_service_test.dart` (new), `test/session_login_test.dart`.
+- **Note:** `UpdateService.currentVersion` mirrors `pubspec.yaml` (`1.0.0`)
+  because `package_info_plus` is not a dependency; update both when bumping the
+  app version. Installation is handled by the browser/Android download flow.
+- **Result:** `flutter analyze`: no issues. `flutter test`: 72/72 passed.
+  `flutter build web --release` and `flutter build apk --debug`: succeeded.
+
+### 2026-11-23 — Release preparation
+- **Version:** Bumped `pubspec.yaml` to `1.1.0+2` (Android versionCode 2) and
+  `UpdateService.currentVersion` to `1.1.0` so the new release is detected by
+  the in-app update checker. Release tag should be **v1.1.0**.
+- **Secrets:** `env.json` contains a real Gemini key but is ignored by
+  `.gitignore` and absent from git history. Only `env.example.json` with a
+  placeholder is tracked. Signing keys/backups live outside the repo.
+- **Result:** `flutter analyze`: no issues. `flutter test`: 72/72 passed.
+  `flutter build web --release` and `flutter build apk --debug`: succeeded.
+
 ---
 
 ## 6. Gotchas / Lessons Learned
@@ -906,11 +1080,14 @@ flutter build web --release
 7. **Stale web session after big changes:** user saw an old error string that
    no longer existed in code — always `flutter clean` + full restart +
    Ctrl+Shift+R before debugging confusing reports.
-8. **Gemini video uploads** (base64 whole file, no timeout) hang for minutes —
+8. **`MediaStreamTrackProcessor` leaks VideoFrames** on camera stop in some
+   Chromium builds; delete it from `window` before camera_web initialises so the
+   plugin uses canvas capture instead.
+9. **Gemini video uploads** (base64 whole file, no timeout) hang for minutes —
    never send videos; use local per-frame tracking for motion analysis.
-9. **PowerShell + flutter CLI:** stderr on success trips PowerShell; buffer
-   output to a file and grep it instead.
-10. **Analyzer budget:** pre-existing `withOpacity` infos in other screens are
+10. **PowerShell + flutter CLI:** stderr on success trips PowerShell; buffer
+    output to a file and grep it instead.
+11. **Analyzer budget:** pre-existing `withOpacity` infos in other screens are
     acceptable — leave them; fix all new errors/warnings immediately.
 11. **Web downloads via `dart:js_interop`/`package:web`:** convert byte buffers
     to `Uint8List` and pass `[uint8List.toJS].toJS` to `Blob` (a raw
@@ -994,7 +1171,9 @@ flutter build web --release
       identification (video & live camera)
 - [ ] User verification: logger set splits (weight/reps/time), graph
       visualizations (Bars/Line/Area/Pie), and timeframe-scoped CSV/PDF export
-- [ ] Web fallback for live camera (getUserMedia + MoveNet) instead of error
+- [x] Web live camera: `camera` plugin handles getUserMedia/permission +
+      enumerateDevices; user picks a detected camera and MoveNet runs on the
+      streamed frames (ML Kit remains the native engine)
 - [ ] Hand off pose-tracking rep counts into `WorkoutState` session history;
       generic workouts/logs are now persisted, but pose reps are not yet wired
       into that flow
