@@ -4,24 +4,27 @@
 > Read this file at the start of any new session to restore context. Update it
 > after every meaningful change.
 >
-> **Last updated:** 2026-11-23 (Android video launch fix, live history with
-> video, welcome cards + new-user name page, WT launcher name, GitHub update
-> check, pose console fixes; tests passing)
+> **Last updated:** 2026-11-23 (v1.1.0 pushed and published to GitHub Releases
+> with signed APK; live history + video, welcome cards + new-user name page,
+> WT launcher name, GitHub update check, diet/export improvements; tests passing)
 > **Session model:** Each new feature/bugfix session appends to §5 Task Log.
 
 ---
 
-## 0. Current State Snapshot (2026-11-20)
+## 0. Current State Snapshot (2026-11-23)
 
 - **Git / GitHub:** `workout_app` is a Git repository. `origin` is
   `https://github.com/insect-cs/Workout_Tracking_App.git`, branch `main`.
   All work is committed and pushed; working tree is clean and `main` is in sync
-  with `origin/main`. Two release commits sit on top of `1a4ed59`:
-  `e53a47e` "Release v1.0.0: local-first sessions, pose tracking and signed
-  Android build" and `717e615` "Fix release build crash on Android 16: preserve
-  Room WorkDatabase constructor". Annotated tag `v1.0.0` points at `717e615`.
-  GitHub release **v1.0.0 — Workout Tracking** is published (not draft, not
-  prerelease) with `app-release.apk` and `app-release.apk.sha256`:
+  with `origin/main`. Five release commits sit on top of the previous `v1.0.0`
+  state: `633ce86` (Android branding/icon), `b08254d` (live tracking history +
+  recorded video),
+  `d6400ea` (diet/export/video-launch improvements), `3349399` (new-user name
+  entry + GitHub update checks), and `65300c8` (docs). Annotated tag **v1.1.0**
+  is pushed. GitHub release **v1.1.0 — Workout Tracking** is published (not
+  draft, not prerelease) with `app-release.apk` and `app-release.apk.sha256`:
+  https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.1.0
+  The previous release remains at
   https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.0.0
 - **Navigation / UI:** Global Material 3 expressive theme with seeded palette
   and app-wide Hero flights. The app now starts on a **single-session login
@@ -1061,6 +1064,32 @@ flutter build web --release
 - **Result:** `flutter analyze`: no issues. `flutter test`: 72/72 passed.
   `flutter build web --release` and `flutter build apk --debug`: succeeded.
 
+### 2026-11-23 — Pushed v1.1.0 and published GitHub release
+- **What:** Committed all pending work in five logical commits (`633ce86`,
+  `b08254d`, `d6400ea`, `3349399`, `65300c8`), pushed `main`, created and pushed
+  annotated tag **v1.1.0**, then published a non-draft/non-prerelease GitHub
+  release. Notes cover the new-user name flow, in-app update checker, live
+  tracking history/video, web camera fixes, diet/export improvements and WT
+  branding.
+- **Assets:** Universal signed release APK `app-release.apk` (105,558,208 bytes)
+  plus `app-release.apk.sha256`, SHA-256
+  `623a5af0e89b605dc3fb3c1798326638a87e3ebf1aeb6450999f9953d4af5fdc`.
+  Downloaded the public asset and re-verified the hash; `apksigner` confirmed a
+  valid v2 signature from the existing Workout Tracking certificate.
+- **Secret safety:** Re-scanned the five commits and the built APK for API-key,
+  token and private-key patterns — no matches. `env.json` is still ignored,
+  untracked and absent from history; only the `env.example.json` placeholder is
+  tracked. The keystore, `android/key.properties` and backups remain outside the
+  repo.
+- **Tooling:** `gh` CLI is not installed on this machine, so release creation
+  and asset upload used the GitHub REST API with the cached git credential for
+  `github.com` (token was never printed or written to the repo).
+- **Result:** Release live at
+  https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.1.0
+  `main` and tag are in sync with `origin`; working tree is clean. The in-app
+  update checker now sees `v1.1.0` as the latest release and reports
+  “You're up to date” for this build.
+
 ---
 
 ## 6. Gotchas / Lessons Learned
@@ -1190,6 +1219,8 @@ flutter build web --release
 - [x] Commit/tag the local-first + Hive CE + login-gate + Plan-History +
       bundled-font changes (done as `e53a47e`, tag `v1.0.0`).
 - [x] Push the local commit/tag(s) to `origin/main` (done).
+- [x] Commit/push v1.1.0, tag `v1.1.0`, and publish the GitHub release with the
+      signed APK plus checksum (done 2026-11-23; see §5 release entry).
 - [ ] User verification: continued Android 16 testing after the R8 fix (user is
       testing and will report any further issues).
 - [ ] Copy the keystore backup ZIP from `E:\test\keystore-backup\` to durable,
