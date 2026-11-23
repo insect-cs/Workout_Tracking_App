@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
+import 'dart:math' as math;
 
+import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
 
@@ -51,6 +53,11 @@ class WebPoseService {
   // element and keep it in sync with the Flutter player for detection.
   static web.HTMLVideoElement? _hiddenVideo;
   static String? _sourceUrl;
+
+  // Offscreen canvas that receives raw RGBA8888 frames from camera_web's
+  // image stream so MoveNet can detect poses on the live webcam.
+  static web.HTMLCanvasElement? _frameCanvas;
+  static web.CanvasRenderingContext2D? _frameContext;
 
   static String? get lastStatus => _lastStatus;
 
@@ -217,56 +224,130 @@ class WebPoseService {
         return null;
       }
 
-      final frameWidth = video.videoWidth.toDouble();
-      final frameHeight = video.videoHeight.toDouble();
-
       final poses = await ((_detector!.callMethod(
         'estimatePoses'.toJS,
         video as JSObject,
       )) as JSPromise<JSObject?>).toDart;
-      if (poses == null) {
-        _lastStatus = 'Detection returned nothing';
-        return null;
-      }
 
-      final posesArray = (poses as JSArray<JSObject>).toDart;
-      if (posesArray.isEmpty) {
-        _noPersonTicks++;
-        _lastStatus = _noPersonTicks > 5
-            ? 'No person detected in video stream'
-            : 'Detecting subject...';
-        return null;
-      }
-      _noPersonTicks = 0;
-      _lastStatus = null;
-
-      final kps = posesArray.first.getProperty<JSObject?>('keypoints'.toJS);
-      if (kps == null) return null;
-
-      final keypoints = <PoseKeypoint>[];
-      for (final kp in (kps as JSArray<JSObject>).toDart) {
-        final rawName = (kp.getProperty<JSString?>('name'.toJS))?.toDart;
-        final x = (kp.getProperty<JSNumber>('x'.toJS)).toDartDouble;
-        final y = (kp.getProperty<JSNumber>('y'.toJS)).toDartDouble;
-        final score = (kp.getProperty<JSNumber>('score'.toJS)).toDartDouble;
-
-        final name = _mapName(rawName);
-        if (name == null) continue;
-
-        keypoints.add(
-          PoseKeypoint(
-            name: name,
-            x: frameWidth > 0 ? (x / frameWidth).clamp(0.0, 1.0) : 0.5,
-            y: frameHeight > 0 ? (y / frameHeight).clamp(0.0, 1.0) : 0.5,
-            confidence: score,
-          ),
-        );
-      }
-
-      return keypoints.isEmpty ? null : keypoints;
+      return _keypointsFromPoses(
+        poses,
+        video.videoWidth.toDouble(),
+        video.videoHeight.toDouble(),
+      );
     } catch (_) {
       return null;
     }
+  }
+
+  /// Detects pose keypoints from a raw frame emitted by the `camera` plugin's
+  /// image stream. camera_web delivers a single RGBA8888 plane (format
+  /// `ImageFormatGroup.unknown`, raw `rgba8888`); it is copied row-by-row into
+  /// an offscreen canvas which MoveNet accepts as an image source.
+  static Future<List<PoseKeypoint>?> detectFromCameraImageWeb(
+    CameraImage image, {
+    bool mirrorX = false,
+  }) async {
+    final ok = await ensureInitialized();
+    if (!ok || _detector == null) return null;
+
+    try {
+      if (image.planes.isEmpty) return null;
+      final width = image.width;
+      final height = image.height;
+      if (width <= 0 || height <= 0) return null;
+
+      final canvas = _frameCanvas ??= web.HTMLCanvasElement();
+      if (canvas.width != width || canvas.height != height) {
+        canvas.width = width;
+        canvas.height = height;
+        _frameContext = null;
+      }
+      final context = _frameContext ??= canvas.context2D;
+
+      final imageData = context.createImageData(width.toJS, height);
+      final destination = imageData.data.toDart;
+      final source = image.planes.first.bytes;
+      final stride = image.planes.first.bytesPerRow;
+      final rowBytes = width * 4;
+      for (var y = 0; y < height; y++) {
+        final sourceStart = y * stride;
+        if (sourceStart >= source.length) break;
+        final destinationStart = y * rowBytes;
+        final length = math.min(rowBytes, source.length - sourceStart);
+        for (var i = 0; i < length; i++) {
+          destination[destinationStart + i] = source[sourceStart + i];
+        }
+      }
+      context.putImageData(imageData, 0, 0);
+
+      final poses = await ((_detector!.callMethod(
+        'estimatePoses'.toJS,
+        canvas as JSObject,
+      )) as JSPromise<JSObject?>).toDart;
+
+      return _keypointsFromPoses(
+        poses,
+        width.toDouble(),
+        height.toDouble(),
+        mirrorX: mirrorX,
+      );
+    } catch (e) {
+      debugPrint('[WebPose] Live camera frame detection failed: $e');
+      return null;
+    }
+  }
+
+  /// Converts the JS MoveNet result into app keypoints, normalized to 0-1.
+  static List<PoseKeypoint>? _keypointsFromPoses(
+    JSObject? poses,
+    double frameWidth,
+    double frameHeight, {
+    bool mirrorX = false,
+  }) {
+    if (poses == null) {
+      _lastStatus = 'Detection returned nothing';
+      return null;
+    }
+
+    final posesArray = (poses as JSArray<JSObject>).toDart;
+    if (posesArray.isEmpty) {
+      _noPersonTicks++;
+      _lastStatus = _noPersonTicks > 5
+          ? 'No person detected in video stream'
+          : 'Detecting subject...';
+      return null;
+    }
+    _noPersonTicks = 0;
+    _lastStatus = null;
+
+    final kps = posesArray.first.getProperty<JSObject?>('keypoints'.toJS);
+    if (kps == null) return null;
+
+    final keypoints = <PoseKeypoint>[];
+    for (final kp in (kps as JSArray<JSObject>).toDart) {
+      final rawName = (kp.getProperty<JSString?>('name'.toJS))?.toDart;
+      final rawX = (kp.getProperty<JSNumber>('x'.toJS)).toDartDouble;
+      final y = (kp.getProperty<JSNumber>('y'.toJS)).toDartDouble;
+      final score = (kp.getProperty<JSNumber>('score'.toJS)).toDartDouble;
+
+      final name = _mapName(rawName);
+      if (name == null) continue;
+
+      var x = frameWidth > 0 ? (rawX / frameWidth) : 0.5;
+      if (mirrorX) x = 1 - x;
+      final normY = frameHeight > 0 ? (y / frameHeight) : 0.5;
+
+      keypoints.add(
+        PoseKeypoint(
+          name: name,
+          x: x.clamp(0.0, 1.0).toDouble(),
+          y: normY.clamp(0.0, 1.0).toDouble(),
+          confidence: score,
+        ),
+      );
+    }
+
+    return keypoints.isEmpty ? null : keypoints;
   }
 
   /// Locates the <video> element that video_player created in the DOM.

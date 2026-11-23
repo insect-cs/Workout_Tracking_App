@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:io';
 
@@ -11,14 +12,19 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:camera/camera.dart';
 
+import '../models/pose_history_models.dart';
+import '../services/live_tracking_history_service.dart';
 import '../services/pose_analysis_service.dart';
 import '../theme/app_colors.dart';
+import '../web/web_camera_compat.dart';
 import '../web/web_pose.dart';
 import '../widgets/pose_skeleton_painter.dart';
 import '../widgets/api_key_dialog.dart';
+import 'live_tracking_history_screen.dart';
 
 class PoseTrackingScreen extends StatefulWidget {
   final VoidCallback onBackToHome;
@@ -30,8 +36,12 @@ class PoseTrackingScreen extends StatefulWidget {
 }
 
 class _PoseTrackingScreenState extends State<PoseTrackingScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final ImagePicker _picker = ImagePicker();
+
+  /// Owned here so the Save snackbar can jump to History without looking up a
+  /// `DefaultTabController` (which lives below this widget in the tree).
+  late TabController _poseTabController;
 
   File? _selectedMediaFile;
   Uint8List? _selectedMediaBytes;
@@ -46,8 +56,20 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
   // Live camera squat tracking
   CameraController? _cameraController;
+  List<CameraDescription> _availableCameras = const [];
+  String? _activeCameraName;
+  bool _mirrorLiveCamera = false;
   bool _isLiveTracking = false;
+  bool _isFinalizingLive = false;
+  DateTime? _sessionStartedAt;
+  bool _hasSavedSession = false;
   bool _isProcessingFrame = false;
+  bool _isStreamingLiveFrames = false;
+
+  // Recorded camera video for the current (or just-stopped) session.
+  String? _recordedVideoPath;
+  String? _recordedVideoBase64;
+  String? _recordedVideoMimeType;
   List<PoseKeypoint> _liveKeypoints = const [];
   int _squatCount = 0;
   bool _inSquatDepth = false;
@@ -191,6 +213,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   @override
   void initState() {
     super.initState();
+    _poseTabController = TabController(length: 2, vsync: this);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -206,6 +229,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
   @override
   void dispose() {
+    _poseTabController.dispose();
     _pulseController.dispose();
     _videoFrameTimer?.cancel();
     _videoPlayerController?.removeListener(_onVideoUpdate);
@@ -216,11 +240,150 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   }
 
   void _stopLiveTracking() {
-    try {
-      _cameraController?.dispose();
-    } catch (_) {}
+    final controller = _cameraController;
     _cameraController = null;
     _isLiveTracking = false;
+    _isProcessingFrame = false;
+    if (controller != null) unawaited(_releaseCamera(controller));
+  }
+
+  /// Stops the frame stream before disposing the controller. Web frame capture
+  /// uses the canvas fallback (see [WebCameraCompat]), so there is no
+  /// MediaStreamTrackProcessor frame left open when the camera is torn down.
+  Future<void> _releaseCamera(CameraController controller) async {
+    if (_isStreamingLiveFrames) {
+      try {
+        await controller.stopImageStream();
+      } catch (_) {}
+      _isStreamingLiveFrames = false;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    try {
+      await controller.dispose();
+    } catch (_) {}
+  }
+
+  bool get _hasRecordedVideo =>
+      (_recordedVideoPath != null && _recordedVideoPath!.isNotEmpty) ||
+      (_recordedVideoBase64 != null && _recordedVideoBase64!.isNotEmpty);
+
+  /// Finalises the camera recording into data that can be saved with the
+  /// session. Web blob URLs die with the page, so those bytes are kept as
+  /// base64; native recordings are copied into app documents.
+  Future<void> _finalizeVideoRecording(CameraController controller) async {
+    if (!controller.value.isRecordingVideo) return;
+    try {
+      final video = await controller.stopVideoRecording();
+      final bytes = await video.readAsBytes();
+      if (kIsWeb) {
+        _recordedVideoBase64 = base64Encode(bytes);
+        _recordedVideoMimeType = video.mimeType;
+      } else {
+        final directory = await getApplicationDocumentsDirectory();
+        final extension = video.mimeType == 'video/mp4' ? 'mp4' : 'webm';
+        final file = File(
+          '${directory.path}/live_tracking_'
+          '${DateTime.now().microsecondsSinceEpoch}.$extension',
+        );
+        await file.writeAsBytes(bytes);
+        _recordedVideoPath = file.path;
+        _recordedVideoMimeType = video.mimeType;
+      }
+    } catch (e) {
+      debugPrint('Could not save live tracking video: $e');
+    }
+  }
+
+  /// Snapshots the current live session into device-local history. The explicit
+  /// Save button uses this while or after tracking; [allowVideoOnly] lets Stop
+  /// keep a recorded session even when no pose was detected.
+  bool _persistCompletedSession({bool allowVideoOnly = false}) {
+    final startedAt = _sessionStartedAt;
+    if (_hasSavedSession || startedAt == null) return false;
+
+    final noTracking =
+        allowVideoOnly && _identifiedRepCount == 0 && _liveKeypoints.isEmpty;
+
+    // Ignore empty sessions unless they carry a recorded video.
+    if (!noTracking &&
+        _identifiedRepCount == 0 &&
+        _liveExerciseName == 'Identifying exercise...' &&
+        !_hasRecordedVideo) {
+      return false;
+    }
+
+    final session = LiveTrackingSession(
+      id: 'live-${DateTime.now().microsecondsSinceEpoch}',
+      startedAt: startedAt,
+      endedAt: DateTime.now(),
+      exerciseName: noTracking ? 'No live tracking' : _liveExerciseName,
+      repCount: _identifiedRepCount,
+      squatCount: _squatCount,
+      curlCount: _curlCount,
+      pushupCount: _pushupCount,
+      kneeAngle: _lastKneeAngle,
+      elbowAngle: _lastElbowAngle,
+      minKneeAngle: _minKneeAngleSeen == 180 ? null : _minKneeAngleSeen,
+      minElbowAngle: _minElbowAngleSeen == 180 ? null : _minElbowAngleSeen,
+      feedback: noTracking
+          ? 'No live tracking happened. The captured camera video is saved below.'
+          : _liveFeedback,
+      engine: kIsWeb ? 'MoveNet (TF.js)' : 'ML Kit',
+      cameraName: _activeCameraName,
+      keypoints: _liveKeypoints
+          .map(
+            (point) => PoseKeypointSnapshot(
+              name: point.name,
+              x: point.x,
+              y: point.y,
+              confidence: point.confidence,
+            ),
+          )
+          .toList(),
+      videoPath: _recordedVideoPath,
+      videoBase64: _recordedVideoBase64,
+      videoMimeType: _recordedVideoMimeType,
+    );
+    _sessionStartedAt = null;
+    _hasSavedSession = true;
+    unawaited(LiveTrackingHistoryStore.save(session));
+    return true;
+  }
+
+  bool get _canSaveLiveSession =>
+      _sessionStartedAt != null && !_hasSavedSession;
+
+  Future<void> _saveLiveSession() async {
+    // Finish the recording first so the saved session includes the captured
+    // video, then snapshot the tracking data into history.
+    if (_isLiveTracking) await _stopLiveTrackingSession();
+    final wasAutoSaved = _hasSavedSession;
+    final saved = _persistCompletedSession() || wasAutoSaved;
+    setState(() {});
+    if (!mounted) return;
+    // Use the controller owned by this State. Looking up `DefaultTabController`
+    // from `context` fails because that widget is a *descendant* of the screen,
+    // and an exception here would also stop Flutter from dismissing the bar.
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          saved
+              ? 'Live tracking saved. Open the History tab to view it.'
+              : 'No live tracking data to save yet.',
+        ),
+        action: saved
+            ? SnackBarAction(
+                label: 'View',
+                onPressed: () {
+                  if (!mounted) return;
+                  _poseTabController.animateTo(1);
+                },
+              )
+            : null,
+        duration: const Duration(seconds: 3),
+        showCloseIcon: true,
+      ),
+    );
   }
 
   /// Resets all live tracking counters and exercise identification state.
@@ -237,6 +400,8 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     _curlCount = 0;
     _pushupCount = 0;
     _armCurled = false;
+    _sessionStartedAt = null;
+    _hasSavedSession = false;
   }
 
   Future<void> _pickImage() async {
@@ -251,6 +416,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
+      if (!mounted) return;
       setState(() {
         _selectedMediaFile = kIsWeb ? null : File(picked.path);
         _selectedMediaBytes = bytes;
@@ -260,8 +426,23 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       });
       await _analyzeCurrentMedia();
     } catch (e) {
-      setState(() => _error = 'Error picking image: $e');
+      if (mounted) setState(() => _error = 'Error picking image: $e');
     }
+  }
+
+  /// Android gallery picks often return a `content://` URI rather than a file
+  /// path. Passing that straight to `File()` mangles it into a `file://` URL
+  /// that ExoPlayer cannot open, so use the dedicated content-uri controller.
+  VideoPlayerController _createVideoController(XFile picked) {
+    if (kIsWeb) return VideoPlayerController.networkUrl(Uri.parse(picked.path));
+    final path = picked.path;
+    if (path.startsWith('content://')) {
+      return VideoPlayerController.contentUri(Uri.parse(path));
+    }
+    if (path.startsWith('file://')) {
+      return VideoPlayerController.file(File.fromUri(Uri.parse(path)));
+    }
+    return VideoPlayerController.file(File(path));
   }
 
   Future<void> _pickVideo() async {
@@ -287,9 +468,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       _videoPlayerController = null;
       WebPoseService.clearVideoSource();
 
-      final VideoPlayerController controller = kIsWeb
-          ? VideoPlayerController.networkUrl(Uri.parse(picked.path))
-          : VideoPlayerController.file(File(picked.path));
+      final VideoPlayerController controller = _createVideoController(picked);
 
       await controller.initialize();
       // No looping: playback stops at the end and a replay button appears.
@@ -310,7 +489,9 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       // here used to stall the UI for seconds and was never used.
       if (!mounted) return;
       setState(() {
-        _selectedMediaFile = kIsWeb ? null : File(picked.path);
+        _selectedMediaFile = kIsWeb || picked.path.startsWith('content://')
+            ? null
+            : File(picked.path);
         _selectedMediaBytes = null;
         _isVideo = true;
         _videoPlayerController = controller;
@@ -335,7 +516,9 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       if (mounted) {
         setState(() {
           _isAnalyzing = false;
-          _error = 'Error loading video: $e';
+          _error =
+              'Could not open this video on your device. '
+              'Try a different MP4 file. Details: $e';
         });
       }
     }
@@ -344,6 +527,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   /// Tracks video playback state: completion (for the replay button) and
   /// position sync for the hidden web detection video.
   void _onVideoUpdate() {
+    if (!mounted) return;
     final controller = _videoPlayerController;
     if (controller == null || !controller.value.isInitialized) return;
     final value = controller.value;
@@ -392,6 +576,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
+      if (!mounted) return;
       setState(() {
         _selectedMediaFile = kIsWeb ? null : File(picked.path);
         _selectedMediaBytes = bytes;
@@ -401,97 +586,337 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       });
       await _analyzeCurrentMedia();
     } catch (e) {
-      setState(() => _error = 'Camera unavailable: $e');
+      if (mounted) setState(() => _error = 'Camera unavailable: $e');
     }
   }
 
   /// Starts live camera tracking: the person stands in front of the camera
-  /// doing squats, and ML Kit streaming pose detection plots their landmarks
-  /// on screen in real time.
+  /// doing squats and their landmarks are plotted in real time.
   ///
-  /// NOTE: Live landmark tracking requires Android or iOS. ML Kit pose
-  /// detection and the camera image-stream API are native-only plugins.
+  /// Device cameras are enumerated first (which triggers the browser/platform
+  /// permission prompt), and when more than one is detected the user chooses
+  /// which one to use. Native devices use ML Kit; the web uses MoveNet.
   Future<void> _startLiveSquatTracking() async {
     _stopVideoFrameTracking();
-    if (kIsWeb) {
-      setState(() {
-        _isAnalyzing = false;
-        _error =
-            'Live squat tracking needs a mobile device. Run "flutter run" on an '
-            'Android phone or emulator - ML Kit pose detection and camera frame '
-            'streaming are native-only and cannot run in a web browser.';
-      });
-      return;
-    }
+    _videoPlayerController?.pause();
+    _stopLiveTracking();
+    _sessionStartedAt = null;
+    _hasSavedSession = false;
+
+    setState(() {
+      _isAnalyzing = true;
+      _error = null;
+      _analysisResult = null;
+    });
 
     try {
-      setState(() {
-        _isAnalyzing = true;
-        _error = null;
-        _analysisResult = null;
-      });
-
-      _videoPlayerController?.pause();
-      _stopLiveTracking();
-
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         throw Exception('No camera found on this device');
       }
+      _availableCameras = cameras;
 
-      // Prefer the front camera so the user can face the screen while squatting
-      CameraDescription camera;
-      try {
-        camera = cameras.firstWhere(
-          (c) => c.lensDirection == CameraLensDirection.front,
-        );
-      } catch (_) {
-        camera = cameras.first;
+      if (!mounted) return;
+      final camera = cameras.length == 1
+          ? cameras.first
+          : await _showCameraPicker(cameras);
+      if (camera == null || !mounted) {
+        setState(() => _isAnalyzing = false);
+        return;
       }
 
-      final controller = CameraController(
+      await _startLiveWithCamera(camera);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isAnalyzing = false;
+        _isLiveTracking = false;
+        _error = _describeCameraError(e);
+      });
+    }
+  }
+
+  /// Opens [camera] and starts streaming frames to the pose detector.
+  Future<void> _startLiveWithCamera(CameraDescription camera) async {
+    setState(() {
+      _isAnalyzing = true;
+      _error = null;
+    });
+
+    CameraController? controller;
+    try {
+      // Must run before the web Camera object is created: camera_web caches
+      // MediaStreamTrackProcessor support in its constructor.
+      WebCameraCompat.disableMediaStreamTrackProcessor();
+
+      controller = CameraController(
         camera,
         ResolutionPreset.medium,
         enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
+        imageFormatGroup: kIsWeb
+            ? ImageFormatGroup.unknown
+            : Platform.isAndroid
             ? ImageFormatGroup.nv21
             : ImageFormatGroup.bgra8888,
       );
 
       await controller.initialize();
-      await controller.setFlashMode(FlashMode.off);
+      // camera_web throws if the browser has no torch constraint, even for
+      // FlashMode.off - flash control is only meaningful on native devices.
+      if (!kIsWeb) {
+        await controller.setFlashMode(FlashMode.off);
+      }
       await controller.startImageStream(_processLiveFrame);
+      _isStreamingLiveFrames = true;
+
+      // Record the same camera stream so the session can be replayed from
+      // history. If a device cannot record while streaming, tracking still
+      // works and the session is simply saved without video.
+      try {
+        await controller.startVideoRecording();
+      } catch (e) {
+        debugPrint('Live video recording unavailable: $e');
+      }
+
+      if (!mounted) {
+        unawaited(_releaseCamera(controller));
+        return;
+      }
 
       setState(() {
+        _recordedVideoPath = null;
+        _recordedVideoBase64 = null;
+        _recordedVideoMimeType = null;
         _cameraController = controller;
         _isLiveTracking = true;
         _isAnalyzing = false;
         _isVideo = false;
         _selectedMediaFile = null;
         _selectedMediaBytes = null;
+        _activeCameraName = _displayCameraName(camera);
+        _mirrorLiveCamera = camera.lensDirection == CameraLensDirection.front;
         _liveKeypoints = const [];
         _resetLiveTrackingState();
+        _sessionStartedAt = DateTime.now();
         _liveFeedback = 'Stand in frame and start exercising';
       });
     } catch (e) {
+      _isStreamingLiveFrames = false;
+      if (controller != null) unawaited(_releaseCamera(controller));
+      if (!mounted) return;
       setState(() {
         _isAnalyzing = false;
         _isLiveTracking = false;
-        _error = 'Could not start live camera: ${e.toString()}';
+        _error = _describeCameraError(e);
       });
     }
   }
 
-  void _stopLiveTrackingSession() {
+  /// Shows the cameras detected on this device and lets the user pick one.
+  Future<CameraDescription?> _showCameraPicker(
+    List<CameraDescription> cameras, {
+    CameraDescription? current,
+  }) {
+    return showDialog<CameraDescription>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF141A24),
+        title: Text(
+          'Select camera',
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textLight,
+          ),
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${cameras.length} camera${cameras.length == 1 ? '' : 's'} detected on this device',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: AppColors.textSlate,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 260),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final camera in cameras)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundColor: AppColors.orangeBorder,
+                            child: Icon(
+                              _cameraIcon(camera.lensDirection),
+                              color: AppColors.primaryOrange,
+                              size: 18,
+                            ),
+                          ),
+                          title: Text(
+                            _displayCameraName(camera),
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.textLight,
+                            ),
+                          ),
+                          subtitle: Text(
+                            _cameraDirectionLabel(camera.lensDirection),
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: AppColors.textSlate,
+                            ),
+                          ),
+                          trailing: camera == current
+                              ? Icon(
+                                  Icons.check_circle,
+                                  color: AppColors.emerald,
+                                )
+                              : null,
+                          onTap: () => Navigator.of(dialogContext).pop(camera),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Re-opens the camera picker so the user can switch between detected
+  /// cameras without stopping the tracking session.
+  Future<void> _switchCamera() async {
+    if (_availableCameras.length < 2) {
+      try {
+        _availableCameras = await availableCameras();
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    if (_availableCameras.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Only one camera is available')),
+      );
+      return;
+    }
+
+    final current = _cameraController?.description;
+    final camera = await _showCameraPicker(_availableCameras, current: current);
+    if (camera == null || !mounted || camera == current) return;
+
     _stopLiveTracking();
+    await _startLiveWithCamera(camera);
+  }
+
+  IconData _cameraIcon(CameraLensDirection direction) {
+    switch (direction) {
+      case CameraLensDirection.front:
+        return Icons.camera_front;
+      case CameraLensDirection.back:
+        return Icons.camera_rear;
+      case CameraLensDirection.external:
+        return Icons.videocam;
+    }
+  }
+
+  String _cameraDirectionLabel(CameraLensDirection direction) {
+    switch (direction) {
+      case CameraLensDirection.front:
+        return 'Front-facing';
+      case CameraLensDirection.back:
+        return 'Back-facing';
+      case CameraLensDirection.external:
+        return 'External / webcam';
+    }
+  }
+
+  String _displayCameraName(CameraDescription camera) {
+    final name = camera.name.trim();
+    if (name.isNotEmpty) return name;
+    return '${_cameraDirectionLabel(camera.lensDirection)} camera';
+  }
+
+  String _describeCameraError(Object error) {
+    final detail = error.toString();
+    final lower = detail.toLowerCase();
+    if (lower.contains('denied') ||
+        lower.contains('notallowed') ||
+        lower.contains('permission')) {
+      return 'Camera access was denied. Allow camera permission in your browser '
+          'or device settings, then try again.';
+    }
+    if (lower.contains('notfound') || lower.contains('no camera')) {
+      return 'No camera found on this device. Connect a camera and try again.';
+    }
+    if (lower.contains('notreadable') || lower.contains('trackstart')) {
+      return 'The camera is busy or unavailable. Close other apps using it and '
+          'try again.';
+    }
+    if (kIsWeb) {
+      return 'Could not start live camera: $detail. Web cameras require HTTPS '
+          '(or localhost) and browser permission.';
+    }
+    return 'Could not start live camera: $detail';
+  }
+
+  Future<void> _stopLiveTrackingSession() async {
+    final controller = _cameraController;
+    _cameraController = null;
+    _isLiveTracking = false;
+    _isProcessingFrame = false;
+    if (mounted) setState(() => _isFinalizingLive = true);
+
+    if (controller != null) {
+      if (_isStreamingLiveFrames) {
+        try {
+          await controller.stopImageStream();
+        } catch (_) {}
+        _isStreamingLiveFrames = false;
+      }
+      await _finalizeVideoRecording(controller);
+      try {
+        await controller.dispose();
+      } catch (_) {}
+      // Give the web plugin a moment to release the stopped video track.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+
     _stopVideoFrameTracking();
     WebPoseService.clearVideoSource();
+
+    // A session with a recording but no detected pose still belongs in
+    // history: it documents the captured video and says tracking did not run.
+    if (_hasRecordedVideo &&
+        _sessionStartedAt != null &&
+        !_hasSavedSession &&
+        _identifiedRepCount == 0 &&
+        _liveKeypoints.isEmpty) {
+      _persistCompletedSession(allowVideoOnly: true);
+    }
+
+    if (!mounted) return;
     setState(() {
+      _isFinalizingLive = false;
       _isVideo = false;
       _selectedMediaFile = null;
       _selectedMediaBytes = null;
       _analysisResult = null;
-      _liveKeypoints = const [];
+      // Keep the last keypoints and camera name so the explicit Save button
+      // can still snapshot them after tracking has stopped.
     });
   }
 
@@ -504,11 +929,16 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       if (controller == null || !controller.value.isInitialized) return;
 
       final camera = controller.description;
-      final keypoints = await PoseAnalysisService.detectFromCameraImage(
-        image,
-        camera: camera,
-        mirrorX: camera.lensDirection == CameraLensDirection.front,
-      );
+      final keypoints = kIsWeb
+          ? await WebPoseService.detectFromCameraImageWeb(
+              image,
+              mirrorX: _mirrorLiveCamera,
+            )
+          : await PoseAnalysisService.detectFromCameraImage(
+              image,
+              camera: camera,
+              mirrorX: _mirrorLiveCamera,
+            );
 
       if (!mounted) return;
       if (keypoints == null || keypoints.isEmpty) {
@@ -865,11 +1295,14 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         _selectedMediaFile == null) {
       return;
     }
+    if (!mounted) return;
 
     // Live video tracking runs locally; still-image analysis uses Gemini and
-    // needs a validated key.
+    // needs a validated key. Capture a BuildContext while mounted: reading
+    // State.context after an await would throw if the screen was popped.
     if (!_isVideo) {
-      final allowed = await ensureAiAccess(context);
+      final analysisContext = context;
+      final allowed = await ensureAiAccess(analysisContext);
       if (!allowed || !mounted) return;
     }
 
@@ -937,52 +1370,84 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         child: Column(
           children: [
             _buildHeader(),
+            _buildPoseTabs(),
             Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 16),
-                    _buildInputControls(),
-                    if (_isAnalyzing) ...[
-                      const SizedBox(height: 24),
-                      _buildAnalyzingIndicator(),
-                    ],
-                    if (_error != null) ...[
-                      const SizedBox(height: 16),
-                      _buildErrorCard(),
-                    ],
-                    if (_selectedMediaFile != null ||
-                        _selectedMediaBytes != null ||
-                        (_isVideo && _videoPlayerController != null) ||
-                        _isLiveTracking) ...[
-                      const SizedBox(height: 16),
-                      _isLiveTracking
-                          ? _buildLiveTrackingPreview()
-                          : _buildMediaPreview(),
-                      if (_isLiveTracking ||
-                          (_isVideo && _videoPlayerController != null)) ...[
-                        const SizedBox(height: 14),
-                        _buildLiveStatsCard(),
+              child: TabBarView(
+                controller: _poseTabController,
+                children: [
+                  SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 16),
+                        _buildInputControls(),
+                        if (_isAnalyzing) ...[
+                          const SizedBox(height: 24),
+                          _buildAnalyzingIndicator(),
+                        ],
+                        if (_error != null) ...[
+                          const SizedBox(height: 16),
+                          _buildErrorCard(),
+                        ],
+                        if (_selectedMediaFile != null ||
+                            _selectedMediaBytes != null ||
+                            (_isVideo && _videoPlayerController != null) ||
+                            _isLiveTracking) ...[
+                          const SizedBox(height: 16),
+                          _isLiveTracking
+                              ? _buildLiveTrackingPreview()
+                              : _buildMediaPreview(),
+                          if (_isLiveTracking ||
+                              (_isVideo && _videoPlayerController != null)) ...[
+                            const SizedBox(height: 14),
+                            _buildLiveStatsCard(),
+                          ],
+                        ],
+                        if (_analysisResult != null) ...[
+                          const SizedBox(height: 20),
+                          _buildResultSection(),
+                        ],
+                        if (_selectedMediaFile == null &&
+                            _selectedMediaBytes == null &&
+                            _analysisResult == null &&
+                            !_isAnalyzing &&
+                            !_isLiveTracking)
+                          _buildEmptyState(),
                       ],
-                    ],
-                    if (_analysisResult != null) ...[
-                      const SizedBox(height: 20),
-                      _buildResultSection(),
-                    ],
-                    if (_selectedMediaFile == null &&
-                        _selectedMediaBytes == null &&
-                        _analysisResult == null &&
-                        !_isAnalyzing &&
-                        !_isLiveTracking)
-                      _buildEmptyState(),
-                  ],
-                ),
+                    ),
+                  ),
+                  const LiveTrackingHistoryScreen(),
+                ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPoseTabs() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: TabBar(
+        controller: _poseTabController,
+        indicatorColor: AppColors.primaryOrange,
+        indicatorWeight: 3,
+        labelColor: AppColors.primaryOrange,
+        unselectedLabelColor: AppColors.textSlate,
+        labelStyle: TextStyle(
+          fontFamily: 'SpaceGrotesk',
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+        tabs: [
+          Tab(text: 'Live Tracking'),
+          Tab(text: 'History'),
+        ],
       ),
     );
   }
@@ -1110,7 +1575,9 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         const SizedBox(height: 10),
         // Live Squat Tracking button (replaces the bundled test workout video)
         GestureDetector(
-          onTap: _isLiveTracking
+          onTap: _isFinalizingLive
+              ? null
+              : _isLiveTracking
               ? _stopLiveTrackingSession
               : _startLiveSquatTracking,
           child: Container(
@@ -1150,7 +1617,9 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _isLiveTracking
+                        _isFinalizingLive
+                            ? 'SAVING CAPTURED VIDEO...'
+                            : _isLiveTracking
                             ? 'STOP LIVE TRACKING'
                             : 'LIVE SQUAT TRACKING (PERSON IN FRONT OF CAMERA)',
                         style: GoogleFonts.spaceGrotesk(
@@ -1178,7 +1647,44 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
             ),
           ),
         ),
+        const SizedBox(height: 10),
+        _buildSaveLiveTrackingButton(),
       ],
+    );
+  }
+
+  Widget _buildSaveLiveTrackingButton() {
+    final canSave = _canSaveLiveSession;
+    return OutlinedButton.icon(
+      key: const Key('save-live-tracking'),
+      onPressed: canSave ? _saveLiveSession : null,
+      icon: Icon(
+        _hasSavedSession ? Icons.check_circle_outline : Icons.save_outlined,
+        size: 16,
+      ),
+      label: Text(
+        _hasSavedSession
+            ? 'SAVED TO HISTORY'
+            : canSave
+            ? 'SAVE LIVE TRACKING'
+            : 'SAVE LIVE TRACKING (START FIRST)',
+        style: GoogleFonts.spaceGrotesk(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.6,
+        ),
+        overflow: TextOverflow.ellipsis,
+      ),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(44),
+        side: BorderSide(
+          color: canSave ? AppColors.primaryOrange : AppColors.border,
+        ),
+        foregroundColor: canSave
+            ? AppColors.primaryOrange
+            : AppColors.textMuted,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
     );
   }
 
@@ -1555,6 +2061,56 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                       letterSpacing: 0.8,
                     ),
                   ),
+                ),
+              ),
+
+              // Active camera + switch control
+              Positioned(
+                top: 42,
+                left: 10,
+                right: 10,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          _activeCameraName ?? 'Camera',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (_availableCameras.length > 1)
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.switch_camera, size: 16),
+                          color: AppColors.primaryOrange,
+                          tooltip: 'Switch camera',
+                          onPressed: _switchCamera,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ),
+                  ],
                 ),
               ),
 

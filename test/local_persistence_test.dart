@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:workout_app/models/calories_models.dart';
 import 'package:workout_app/models/diet_models.dart';
 import 'package:workout_app/models/plan_models.dart';
+import 'package:workout_app/models/pose_history_models.dart';
 import 'package:workout_app/models/workout_models.dart';
+import 'package:workout_app/services/live_tracking_history_service.dart';
 import 'package:workout_app/services/local_store.dart';
 import 'package:workout_app/services/plan_history_service.dart';
 import 'package:workout_app/state/diet_state.dart';
@@ -223,6 +225,56 @@ void main() {
     await LocalStore.instance.deleteNamespace(LocalStore.guestNamespace);
     expect(PlanHistoryStore.read(), isEmpty);
   });
+
+  test(
+    'live tracking history survives a round trip and is session scoped',
+    () async {
+      final session = LiveTrackingSession(
+        id: 'live-1',
+        startedAt: DateTime(2026, 11, 23, 9),
+        endedAt: DateTime(2026, 11, 23, 9, 1),
+        exerciseName: 'Bodyweight Squat',
+        repCount: 12,
+        squatCount: 12,
+        curlCount: 0,
+        pushupCount: 0,
+        kneeAngle: 95.2,
+        elbowAngle: 160.4,
+        minKneeAngle: 82.1,
+        minElbowAngle: null,
+        feedback: 'Deep squat',
+        engine: 'ML Kit',
+        cameraName: 'Back camera',
+        videoPath: '/tmp/live.webm',
+        videoBase64: 'ZmFrZSB2aWRlbyBieXRlcw==',
+        videoMimeType: 'video/webm',
+        keypoints: const [
+          PoseKeypointSnapshot(
+            name: 'left_knee',
+            x: 0.4,
+            y: 0.7,
+            confidence: 0.9,
+          ),
+        ],
+      );
+
+      await LiveTrackingHistoryStore.save(session);
+      final restored = LiveTrackingHistoryStore.read().single;
+      expect(restored.id, 'live-1');
+      expect(restored.exerciseName, 'Bodyweight Squat');
+      expect(restored.repCount, 12);
+      expect(restored.formattedDuration, '1m');
+      expect(restored.keypoints.single.name, 'left_knee');
+      expect(restored.hasVideo, isTrue);
+      expect(restored.videoPath, '/tmp/live.webm');
+      expect(restored.videoBase64, 'ZmFrZSB2aWRlbyBieXRlcw==');
+      expect(restored.videoMimeType, 'video/webm');
+
+      LocalStore.instance.setNamespace(LocalStore.newUserNamespace);
+      expect(LiveTrackingHistoryStore.read(), isEmpty);
+      LocalStore.instance.setNamespace(LocalStore.guestNamespace);
+    },
+  );
 
   test('calorie and BMI results survive a local-store round trip', () async {
     const profile = CalorieProfile(
