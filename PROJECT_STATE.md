@@ -4,10 +4,11 @@
 > Read this file at the start of any new session to restore context. Update it
 > after every meaningful change.
 >
-> **Last updated:** 2026-11-24 (v1.2.0 released: Android 16 live-pose fix, diet
-> planner upgrades, Calories/BMI History, Android YouTube ID-case fix,
-> generated-result return buttons, and recorded-landmark replay overlay;
-> analyze clean, 97/97 tests pass, signed APK built)
+> **Last updated:** 2026-11-24 (final end-of-day checkpoint: v1.2.0 / commit
+> `7bfa403` released with the signed APK; Android 16 live-pose fix, diet/export
+> upgrades, Calories/BMI History, YouTube ID fix, return buttons and recorded
+> landmark replay overlay included; analyze clean, 97/97 tests pass, worktree
+> clean)
 > **Session model:** Each new feature/bugfix session appends to §5 Task Log.
 
 ---
@@ -32,10 +33,11 @@
   verification on the Android 16 device.**
 - **Git / GitHub:** `workout_app` is a Git repository. `origin` is
   `https://github.com/insect-cs/Workout_Tracking_App.git`, branch `main`.
-  All released work is committed and pushed and `main` is in sync with
-  `origin/main`. The 2026-11-24 fixes above are included in **v1.2.0** and were
-  committed with author `insect-cs@users.noreply.github.com`. Annotated tag
-  **v1.2.0** is pushed. GitHub release **v1.2.0 — Workout Tracking** is
+  All released work is committed and pushed; `main` is in sync with
+  `origin/main` and the working tree is clean. The 2026-11-24 fixes above are in
+  commit `7bfa403` / **v1.2.0**, authored as
+  `insect-cs@users.noreply.github.com`. Annotated tag **v1.2.0** is pushed.
+  GitHub release **v1.2.0 — Workout Tracking** is
   published (not draft, not prerelease) with `app-release.apk` and
   `app-release.apk.sha256`:
   https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.2.0
@@ -1359,6 +1361,39 @@ flutter build web --release
   of the fresh APK found 0 hits.
 - **Status:** **Published**; only remaining work is the user's on-device
   verification pass.
+
+### 2026-11-24 — Final end-of-day state checkpoint
+- **Purpose:** Canonical resume point for the next session; supersedes the
+  earlier "uncommitted" notes above. The working tree is clean.
+- **Code state:** All 2026-11-24 fixes are in commit `7bfa403`
+  (`Release v1.2.0: pose replay, diet/export, history and Android fixes`) on
+  `main`, tag **v1.2.0**, `pubspec.yaml` version `1.2.0+3` (versionCode 3).
+  `main` is in sync with `origin/main`; no staged or untracked changes remain.
+  Release:
+  https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.2.0
+- **Published assets:** `app-release.apk` (105,607,424 bytes) and
+  `app-release.apk.sha256`. APK SHA-256:
+  `26a05c1f37801e663b190431e6cdd6989354c30d3816e3ab8465c6181618c885`.
+  The public release asset was downloaded and its hash re-verified against the
+  local build; `apksigner` confirmed a valid v2 signature from the existing
+  Workout Tracking certificate.
+- **Validation:** `flutter analyze lib test android` clean, `flutter test`
+  **97/97 passed**, `flutter build apk --debug` and `flutter build apk --release`
+  both succeeded, strict secret scan found 0 real credentials in the diff,
+  untracked files, tracked source or APKs.
+- **Hygiene:** Commit authored as `insect-cs@users.noreply.github.com`; ignored
+  secrets (`env.json`, `key.properties`, release JKS, `build/`) were never
+  staged; local absolute paths in this document were replaced with generic
+  placeholders.
+- **Still open:** User on-device verification checklist is in §7 (live
+  landmarks/angles/reps, diet colours/goals/units, Downloads exports, Calories
+  History, YouTube links, return buttons, replay landmarks). Also open: move
+  the keystore backup ZIP to durable offline storage, decide on a backend
+  Gemini proxy, wire pose reps into `WorkoutState`, and the smaller backlog in
+  §7.
+- **Next session:** Start from §0 and this entry. There are no uncommitted
+  changes to recover. If the device still reports no pose, use the on-screen
+  detection badge text for the next diagnosis.
 
 ---
 
