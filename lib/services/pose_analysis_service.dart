@@ -48,6 +48,26 @@ class PoseKeypoint {
 }
 
 class PoseAnalysisService {
+  /// Last error reported by the native detector. The live-tracking UI shows
+  /// this instead of silently claiming "no person detected", which used to
+  /// hide frame-format / detector failures completely.
+  static String? _lastNativeDetectionError;
+  static String? get lastNativeDetectionError => _lastNativeDetectionError;
+
+  // CameraX reports a sensor orientation that does not always match the
+  // rotation of the frames it delivers (notably on newer Android devices).
+  // Remember the rotation that actually produces landmarks and probe the
+  // alternatives if frames keep coming back empty.
+  static InputImageRotation? _preferredRotation;
+  static int _emptyFrameCount = 0;
+  static int _rotationProbeIndex = 0;
+  static const _allRotations = [
+    InputImageRotation.rotation0deg,
+    InputImageRotation.rotation90deg,
+    InputImageRotation.rotation180deg,
+    InputImageRotation.rotation270deg,
+  ];
+
   static PoseDetector? _mlkitPoseDetector;
 
   static PoseDetector get mlkitDetector {
@@ -73,6 +93,26 @@ class PoseAnalysisService {
     return _streamingPoseDetector!;
   }
 
+  /// Builds the tightly packed NV21 InputImage ML Kit expects on Android.
+  /// CameraX can deliver padded NV21 data or three YUV_420_888 planes, and ML
+  /// Kit rejects any buffer whose size does not exactly match the dimensions.
+  static InputImage? _androidInputImageFromCameraFrame(
+    CameraImage image,
+    InputImageRotation rotation,
+  ) {
+    final nv21 = packedNv21FromCameraImage(image);
+    if (nv21 == null) return null;
+    return InputImage.fromBytes(
+      bytes: nv21,
+      metadata: InputImageMetadata(
+        size: Size(image.width.toDouble(), image.height.toDouble()),
+        rotation: rotation,
+        format: InputImageFormat.nv21,
+        bytesPerRow: image.width,
+      ),
+    );
+  }
+
   /// Detects pose landmarks from a live camera frame in real time.
   /// Returns normalized (0.0 - 1.0) keypoints ready for the skeleton painter.
   /// Set [mirrorX] to true for the front-facing camera so the plotted
@@ -82,42 +122,89 @@ class PoseAnalysisService {
     required CameraDescription camera,
     bool mirrorX = false,
   }) async {
+    _lastNativeDetectionError = null;
     try {
-      final rotation =
+      final sensorRotation =
           InputImageRotationValue.fromRawValue(camera.sensorOrientation) ??
           InputImageRotation.rotation0deg;
+      var rotation = _preferredRotation ?? sensorRotation;
 
-      final metadata = InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: Platform.isAndroid
-            ? InputImageFormat.nv21
-            : InputImageFormat.bgra8888,
-        bytesPerRow: image.planes.first.bytesPerRow,
-      );
-
-      final inputImage = InputImage.fromBytes(
-        bytes: image.planes.first.bytes,
-        metadata: metadata,
-      );
-
-      final poses = await streamingDetector.processImage(inputImage);
-      if (poses.isEmpty) return null;
-
-      final pose = poses.first;
-      final landmarks = pose.landmarks;
-      if (landmarks.isEmpty) return null;
-
-      double maxX = 0, maxY = 0;
-      for (final lm in landmarks.values) {
-        if (lm.x > maxX) maxX = lm.x;
-        if (lm.y > maxY) maxY = lm.y;
+      // If the device keeps returning no poses with the reported rotation,
+      // try the other three on successive frames and lock in whichever one
+      // actually sees the person.
+      if (_preferredRotation == null && _emptyFrameCount >= 8) {
+        final alternatives = _allRotations
+            .where((candidate) => candidate != sensorRotation)
+            .toList();
+        rotation = alternatives[_rotationProbeIndex % alternatives.length];
+        _rotationProbeIndex++;
       }
+
+      final inputImage = Platform.isAndroid
+          ? _androidInputImageFromCameraFrame(image, rotation)
+          : InputImage.fromBytes(
+              bytes: image.planes.first.bytes,
+              metadata: InputImageMetadata(
+                size: Size(image.width.toDouble(), image.height.toDouble()),
+                rotation: rotation,
+                format: InputImageFormat.bgra8888,
+                bytesPerRow: image.planes.first.bytesPerRow,
+              ),
+            );
+
+      if (inputImage == null) {
+        _lastNativeDetectionError ??=
+            'Unsupported camera frame '
+            '(${image.width}x${image.height}, '
+            '${image.planes.length} plane(s), format ${image.format.raw})';
+        debugPrint('ML Kit frame error: $_lastNativeDetectionError');
+        return null;
+      }
+
+      List<Pose> poses = const [];
+      try {
+        poses = await streamingDetector.processImage(inputImage);
+      } catch (e) {
+        _lastNativeDetectionError = 'Streaming detector error: $e';
+      }
+
+      // Some devices report no poses in STREAM mode on the first frames.
+      // Fall back to the single-image detector so tracking still starts.
+      if (poses.isEmpty) {
+        try {
+          final fallback = await mlkitDetector.processImage(inputImage);
+          if (fallback.isNotEmpty) {
+            poses = fallback;
+            _lastNativeDetectionError = null;
+          }
+        } catch (e) {
+          _lastNativeDetectionError ??= 'Pose detector error: $e';
+        }
+      }
+      if (poses.isEmpty) {
+        _emptyFrameCount++;
+        return null;
+      }
+
+      final landmarks = poses.first.landmarks;
+      if (landmarks.isEmpty) {
+        _emptyFrameCount++;
+        return null;
+      }
+
+      _preferredRotation = rotation;
+      _emptyFrameCount = 0;
+
+      // ML Kit reports landmark positions in the *rotated* frame coordinate
+      // space. Normalize against those true dimensions so the skeleton lines
+      // up with the camera preview (dividing by the largest landmark instead
+      // used to squish/shift the skeleton and break angle calculations).
+      final frameSize = poseFrameSize(image.width, image.height, rotation);
 
       final keypoints = <PoseKeypoint>[];
       landmarks.forEach((type, lm) {
-        var normX = maxX > 0 ? lm.x / maxX : 0.5;
-        var normY = maxY > 0 ? lm.y / maxY : 0.5;
+        var normX = lm.x / frameSize.width;
+        var normY = lm.y / frameSize.height;
         if (mirrorX) normX = 1 - normX;
         keypoints.add(
           PoseKeypoint(
@@ -131,14 +218,27 @@ class PoseAnalysisService {
 
       return keypoints;
     } catch (e) {
+      _lastNativeDetectionError = e.toString();
       debugPrint('ML Kit streaming pose detection error: $e');
       return null;
     }
   }
 
+  /// Clears per-session live tracking heuristics. Call when a new live camera
+  /// session starts so a rotation learned from a previous camera is not reused.
+  static void resetLiveTracking() {
+    _preferredRotation = null;
+    _emptyFrameCount = 0;
+    _rotationProbeIndex = 0;
+    _lastNativeDetectionError = null;
+  }
+
   static void dispose() {
     _mlkitPoseDetector?.close();
     _mlkitPoseDetector = null;
+    _streamingPoseDetector?.close();
+    _streamingPoseDetector = null;
+    resetLiveTracking();
   }
 
   /// Attempts native Google ML Kit pose detection on mobile (Android/iOS).
@@ -482,4 +582,85 @@ Return ONLY valid JSON (no markdown, no backticks):
         return 'image/jpeg';
     }
   }
+}
+
+/// Packs a camera frame into a tightly sized NV21 byte array that ML Kit will
+/// accept (`width * height * 3 / 2` bytes exactly).
+///
+/// `camera_android_camerax` either returns one already-NV21 plane (sometimes
+/// overallocated because the Y plane has a padded row stride), or three
+/// YUV_420_888 planes when NV21 output is unavailable on the device. Both are
+/// handled here. Returns null when the frame cannot be converted safely.
+@visibleForTesting
+Uint8List? packedNv21FromCameraImage(CameraImage image) {
+  final width = image.width;
+  final height = image.height;
+  if (width <= 0 || height <= 0 || width.isOdd || height.isOdd) return null;
+
+  final expectedLength = width * height * 3 ~/ 2;
+  final planes = image.planes;
+
+  if (planes.isEmpty) return null;
+
+  if (planes.length == 1) {
+    final bytes = planes.first.bytes;
+    // A padded NV21 buffer from CameraX can be longer than ML Kit expects.
+    // Y and VU bytes are already packed contiguously, so trimming is enough.
+    if (bytes.length < expectedLength) return null;
+    if (bytes.length == expectedLength) return bytes;
+    return Uint8List.sublistView(bytes, 0, expectedLength);
+  }
+
+  if (planes.length < 3) return null;
+
+  final yPlane = planes[0];
+  final uPlane = planes[1];
+  final vPlane = planes[2];
+  final yBytes = yPlane.bytes;
+  final uBytes = uPlane.bytes;
+  final vBytes = vPlane.bytes;
+
+  final yStride = yPlane.bytesPerRow;
+  final uStride = uPlane.bytesPerRow;
+  final vStride = vPlane.bytesPerRow;
+  if (yStride < width || uStride == 0 || vStride == 0) return null;
+
+  final uPixelStride = uPlane.bytesPerPixel ?? 1;
+  final vPixelStride = vPlane.bytesPerPixel ?? 1;
+
+  final nv21 = Uint8List(expectedLength);
+  var offset = 0;
+
+  // Full-resolution luma plane.
+  for (var row = 0; row < height; row++) {
+    final start = row * yStride;
+    if (start + width > yBytes.length) return null;
+    nv21.setRange(offset, offset + width, yBytes, start);
+    offset += width;
+  }
+
+  // Half-resolution chroma planes, interleaved as VU for NV21.
+  for (var row = 0; row < height ~/ 2; row++) {
+    for (var col = 0; col < width ~/ 2; col++) {
+      final uIndex = row * uStride + col * uPixelStride;
+      final vIndex = row * vStride + col * vPixelStride;
+      if (uIndex >= uBytes.length || vIndex >= vBytes.length) return null;
+      nv21[offset++] = vBytes[vIndex];
+      nv21[offset++] = uBytes[uIndex];
+    }
+  }
+
+  return nv21;
+}
+
+/// Size of the coordinate space ML Kit uses for detected landmarks. A 90 or
+/// 270 degree rotation swaps width and height.
+@visibleForTesting
+Size poseFrameSize(int width, int height, InputImageRotation rotation) {
+  final swapped =
+      rotation == InputImageRotation.rotation90deg ||
+      rotation == InputImageRotation.rotation270deg;
+  return swapped
+      ? Size(height.toDouble(), width.toDouble())
+      : Size(width.toDouble(), height.toDouble());
 }

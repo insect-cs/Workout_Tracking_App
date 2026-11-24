@@ -3,15 +3,34 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// Opens exercise demonstration videos reliably on Android.
 ///
-/// Android 11+ hides other apps from `canLaunchUrl` unless they are declared in
-/// the manifest's `<queries>`, so checking first made perfectly valid
-/// YouTube/browser URLs look unlaunchable. This helper simply attempts the
-/// launch, falls back from the YouTube app to the default browser, and only
-/// reports failure when every option has been tried.
+/// YouTube video IDs are case-sensitive. Dart lowercases the host component of
+/// a URI, so the previous `vnd.youtube://<id>` deep link rewrote IDs such as
+/// `8iPEnn-ltC8` to `8ipenn-ltc8` and YouTube showed "Video unavailable". We now
+/// open a canonical `https://www.youtube.com/watch?v=<id>` URL, which keeps the
+/// ID in the query string with its original case. That URL opens the YouTube
+/// app through Android App Links when installed, and otherwise opens the same
+/// page in the browser that works in the web build.
+///
+/// Android 11+ also hides other apps from `canLaunchUrl` unless they are
+/// declared in the manifest's `<queries>`, so this helper attempts the launch
+/// directly and only reports failure after every fallback has been tried.
 abstract final class VideoLaunchService {
-  static Future<bool> open(String url) {
+  static const Set<String> _youtubeHosts = <String>{
+    'youtube.com',
+    'www.youtube.com',
+    'm.youtube.com',
+  };
+  static final RegExp _videoIdPattern = RegExp(r'^[A-Za-z0-9_-]{11}$');
+
+  /// Opens [url] in the YouTube app or a browser.
+  ///
+  /// [searchQuery] is used only when the URL is a YouTube link without a valid
+  /// video id (for example a hallucinated short watch link), so the user still
+  /// lands on usable YouTube results instead of an unavailable video page.
+  static Future<bool> open(String url, {String? searchQuery}) {
     final uri = Uri.tryParse(url.trim());
     if (uri == null || !uri.hasScheme) return Future.value(false);
+
     if (kIsWeb) {
       return _try(
         () => launchUrl(
@@ -22,30 +41,74 @@ abstract final class VideoLaunchService {
       );
     }
 
-    return _openNative(uri);
+    return _openNative(uri, searchQuery: searchQuery);
   }
 
-  static Future<bool> _openNative(Uri uri) async {
-    final videoId = _youtubeVideoId(uri);
-    if (videoId != null) {
-      // Prefer the native YouTube app when it is installed.
-      final appUri = Uri.parse('vnd.youtube://$videoId');
-      if (await _try(
-        () => launchUrl(appUri, mode: LaunchMode.externalNonBrowserApplication),
-      )) {
-        return true;
-      }
+  static Future<bool> _openNative(Uri uri, {String? searchQuery}) async {
+    final watchUrl = canonicalWatchUrl(uri.toString());
+    final Uri target;
+    if (watchUrl != null) {
+      // Case-sensitive id stays intact in the query string.
+      target = Uri.parse(watchUrl);
+    } else if (_isYouTubeUri(uri)) {
+      target = _searchUri(searchQuery) ?? uri;
+    } else {
+      target = uri;
     }
 
-    // External application covers Chrome / YouTube; platformDefault opens an
-    // in-app browser tab when no external handler is available.
+    // externalApplication reaches YouTube/browser; platformDefault is the
+    // last-resort in-app browser if no external handler is available.
     for (final mode in [
       LaunchMode.externalApplication,
       LaunchMode.platformDefault,
     ]) {
-      if (await _try(() => launchUrl(uri, mode: mode))) return true;
+      if (await _try(() => launchUrl(target, mode: mode))) return true;
     }
     return false;
+  }
+
+  static Uri? _searchUri(String? query) {
+    final trimmed = query?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    final encoded = Uri.encodeComponent('$trimmed exercise form tutorial');
+    return Uri.parse('https://www.youtube.com/results?search_query=$encoded');
+  }
+
+  static bool _isYouTubeUri(Uri uri) {
+    final host = uri.host.toLowerCase();
+    return host == 'youtu.be' || _youtubeHosts.contains(host);
+  }
+
+  /// Extracts the case-sensitive 11-character video id from watch, youtu.be,
+  /// embed and shorts URLs. Returns null for search URLs or malformed ids.
+  static String? youTubeVideoId(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return null;
+
+    final host = uri.host.toLowerCase();
+    final segments = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+    String? id;
+
+    if (host == 'youtu.be') {
+      if (segments.isNotEmpty) id = segments.first;
+    } else if (_youtubeHosts.contains(host)) {
+      if (segments.isNotEmpty && segments.first == 'watch') {
+        id = uri.queryParameters['v'];
+      } else if (segments.length >= 2 &&
+          (segments.first == 'embed' || segments.first == 'shorts')) {
+        id = segments[1];
+      }
+    }
+
+    if (id == null || !_videoIdPattern.hasMatch(id)) return null;
+    return id;
+  }
+
+  /// Returns a canonical watch URL for a direct YouTube video link, or null
+  /// when [url] is not a recognised video URL.
+  static String? canonicalWatchUrl(String url) {
+    final id = youTubeVideoId(url);
+    return id == null ? null : 'https://www.youtube.com/watch?v=$id';
   }
 
   static Future<bool> _try(Future<bool> Function() action) async {
@@ -54,29 +117,5 @@ abstract final class VideoLaunchService {
     } catch (_) {
       return false;
     }
-  }
-
-  /// Supports the watch, youtu.be, embed and shorts forms of a YouTube link.
-  static String? _youtubeVideoId(Uri uri) {
-    final host = uri.host.toLowerCase();
-    if (host == 'youtu.be') {
-      final id = uri.pathSegments.where((part) => part.isNotEmpty).firstOrNull;
-      return id != null && id.length >= 8 ? id : null;
-    }
-    if (host == 'www.youtube.com' ||
-        host == 'youtube.com' ||
-        host == 'm.youtube.com') {
-      if (uri.path == '/watch') {
-        final id = uri.queryParameters['v'];
-        return id != null && id.length >= 8 ? id : null;
-      }
-      final segments = uri.pathSegments;
-      if (segments.length >= 2 &&
-          (segments.first == 'embed' || segments.first == 'shorts')) {
-        final id = segments[1];
-        return id.length >= 8 ? id : null;
-      }
-    }
-    return null;
   }
 }

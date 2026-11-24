@@ -252,3 +252,65 @@ class BmiEstimate {
         DateTime.now(),
   );
 }
+
+/// One generated calorie or BMI response explicitly saved from a result view.
+///
+/// The wrapper keeps a separate history id and saved timestamp so the same
+/// generated response can be recognised without colliding with new generations.
+class SavedCalorieEntry {
+  const SavedCalorieEntry({
+    required this.id,
+    this.weekly,
+    this.bmi,
+    required this.savedAt,
+  });
+
+  final String id;
+  final WeeklyCalorieEstimate? weekly;
+  final BmiEstimate? bmi;
+  final DateTime savedAt;
+
+  bool get isWeekly => weekly != null;
+
+  String get kind => isWeekly ? 'weekly' : 'bmi';
+
+  String get title => isWeekly ? 'Weekly calorie estimate' : 'BMI result';
+
+  String get preview {
+    final weeklyResult = weekly;
+    if (weeklyResult != null) {
+      if (weeklyResult.summary.isNotEmpty) return weeklyResult.summary;
+      return '${weeklyResult.dailyTarget} kcal/day target';
+    }
+    final bmiResult = bmi!;
+    return 'BMI ${bmiResult.bmi.toStringAsFixed(1)} • ${bmiResult.category}';
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'kind': kind,
+    'response': weekly?.toJson() ?? bmi!.toJson(),
+    'savedAt': savedAt.toIso8601String(),
+  };
+
+  factory SavedCalorieEntry.fromJson(Map<String, dynamic> json) {
+    final storedKind = (json['kind'] as String?) ?? '';
+    final response =
+        (json['response'] as Map<String, dynamic>?) ??
+        const <String, dynamic>{};
+    final isWeekly =
+        storedKind == 'weekly' ||
+        (storedKind.isEmpty && response.containsKey('dailyTarget'));
+
+    return SavedCalorieEntry(
+      id:
+          (json['id'] as String?) ??
+          'saved-calorie-${DateTime.now().microsecondsSinceEpoch}',
+      weekly: isWeekly ? WeeklyCalorieEstimate.fromJson(response) : null,
+      bmi: isWeekly ? null : BmiEstimate.fromJson(response),
+      savedAt:
+          DateTime.tryParse((json['savedAt'] as String?) ?? '') ??
+          DateTime.now(),
+    );
+  }
+}

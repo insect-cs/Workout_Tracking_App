@@ -4,11 +4,11 @@ A Flutter app for planning workouts, tracking exercises with on-device pose dete
 
 ## Features
 
-- **Plan** — generate weekly or single-day workout plans with AI, browse exercise demo videos, and save results to a per-session History tab.
-- **Calories** — estimate BMR/TDEE (Mifflin–St Jeor) and BMI locally, then generate an AI narrative from those numbers.
+- **Plan** — generate weekly or single-day workout plans with AI, browse exercise demo videos, save results to a per-session History tab, and use **Go to previous screen** on a result to return to the form you edited.
+- **Calories** — estimate BMR/TDEE (Mifflin–St Jeor) and BMI locally, generate an AI narrative from those numbers, save weekly or BMI responses to a **History** tab for later viewing, and use **Go to previous screen** to return to the matching edit form.
 - **Diet** — daily and weekly calorie/water goals with day status highlighting, 24 hourly slots, food entries with optional AI validation, water logging, Rest/sleep tracking, and a summary with CSV/PDF export.
 - **Exercise logger** — saved workouts, current workout, and per-set logging.
-- **Pose tracking** — on-device landmark tracking, rep counting, angles, and exercise identification. Uses TensorFlow.js MoveNet on web and Google ML Kit on Android/iOS. Live sessions record the camera stream; use **Save live tracking** to keep tracked sessions locally, then view metrics and replay the video in the **History** tab inside this screen. Stopping a session with no detected pose saves a video-only entry that says no live tracking happened.
+- **Pose tracking** — on-device landmark tracking, rep counting, angles, and exercise identification. Uses TensorFlow.js MoveNet on web and Google ML Kit on Android/iOS. Live sessions record the camera stream and time-stamped landmarks; use **Save live tracking** to keep tracked sessions locally, then view metrics and replay the video with the recorded skeleton overlay in the **History** tab inside this screen. Stopping a session with no detected pose saves a video-only entry that says no live tracking happened.
 - **Sessions** — start as a guest, or choose **Continue as new user** to enter your name on a welcome page (“Welcome, &lt;name&gt;” updates as you type) and continue. The name appears in the Home greeting and stays with the device-local profile across restarts.
 - **Themes** — Material 3 light/dark mode plus six seeded color schemes, with animated navigation.
 - **Updates** — **Check for updates** on the login screen queries GitHub Releases, shows the latest version and notes, and offers the APK download when a newer release exists.

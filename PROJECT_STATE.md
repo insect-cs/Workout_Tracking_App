@@ -4,27 +4,43 @@
 > Read this file at the start of any new session to restore context. Update it
 > after every meaningful change.
 >
-> **Last updated:** 2026-11-23 (v1.1.0 pushed and published to GitHub Releases
-> with signed APK; live history + video, welcome cards + new-user name page,
-> WT launcher name, GitHub update check, diet/export improvements; tests passing)
+> **Last updated:** 2026-11-24 (v1.2.0 released: Android 16 live-pose fix, diet
+> planner upgrades, Calories/BMI History, Android YouTube ID-case fix,
+> generated-result return buttons, and recorded-landmark replay overlay;
+> analyze clean, 97/97 tests pass, signed APK built)
 > **Session model:** Each new feature/bugfix session appends to §5 Task Log.
 
 ---
 
-## 0. Current State Snapshot (2026-11-23)
+## 0. Current State Snapshot (2026-11-24)
 
+- **Released work (2026-11-24, v1.2.0):** (1) Android 16 live-camera
+  pose-tracking fix — `lib/services/pose_analysis_service.dart`,
+  `lib/screens/pose_tracking_screen.dart`, new `test/pose_frame_test.dart`.
+  (2) Diet planner upgrade — slot colours, daily/weekly Rest goals, food
+  quantity units, and CSV/PDF exports written to Android Downloads via a new
+  MethodChannel (`MainActivity.kt`, `download_saver*.dart`). (3) Calories
+  response History — save buttons at the end of weekly and BMI results, a new
+  third History tab, and a namespaced `CalorieHistoryStore`. (4) Android YouTube
+  link fix — canonical HTTPS watch URLs preserve case-sensitive video IDs
+  instead of lowercasing them in a `vnd.youtube://` host. (5) Generated-result
+  return buttons — Plan and Calories results end with **Go to previous screen**,
+  which clears the result and restores the matching form tab. (6) Live-session
+  replay landmarks — time-stamped skeletons are stored with the recorded video
+  and drawn on the History video as it plays. See the §5 task-log entries for
+  details. **Committed, pushed, tagged and released; still needs user
+  verification on the Android 16 device.**
 - **Git / GitHub:** `workout_app` is a Git repository. `origin` is
   `https://github.com/insect-cs/Workout_Tracking_App.git`, branch `main`.
-  All work is committed and pushed; working tree is clean and `main` is in sync
-  with `origin/main`. Five release commits sit on top of the previous `v1.0.0`
-  state: `633ce86` (Android branding/icon), `b08254d` (live tracking history +
-  recorded video),
-  `d6400ea` (diet/export/video-launch improvements), `3349399` (new-user name
-  entry + GitHub update checks), and `65300c8` (docs). Annotated tag **v1.1.0**
-  is pushed. GitHub release **v1.1.0 — Workout Tracking** is published (not
-  draft, not prerelease) with `app-release.apk` and `app-release.apk.sha256`:
-  https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.1.0
-  The previous release remains at
+  All released work is committed and pushed and `main` is in sync with
+  `origin/main`. The 2026-11-24 fixes above are included in **v1.2.0** and were
+  committed with author `insect-cs@users.noreply.github.com`. Annotated tag
+  **v1.2.0** is pushed. GitHub release **v1.2.0 — Workout Tracking** is
+  published (not draft, not prerelease) with `app-release.apk` and
+  `app-release.apk.sha256`:
+  https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.2.0
+  Previous releases remain at
+  https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.1.0 and
   https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.0.0
 - **Navigation / UI:** Global Material 3 expressive theme with seeded palette
   and app-wide Hero flights. The app now starts on a **single-session login
@@ -106,16 +122,28 @@
   exercise identification, seek slider and dynamic rep counter run per frame.
   Videos are never uploaded to Gemini; still-image analysis uses the active
   validated key.
+- **Android live-camera landmark fix (2026-11-24):** `detectFromCameraImage`
+  now repacks CameraX frames into an exact-size NV21 buffer (handles padded
+  NV21 and 3-plane YUV_420_888), falls back from STREAM to SINGLE detector
+  mode, probes frame rotation if a device reports a mismatched sensor
+  orientation, and normalizes landmarks against the true rotated frame size.
+  The live screen now publishes the camera before starting the image stream,
+  starts video recording without blocking tracking, and shows native
+  detection errors on screen instead of silently reporting "no person".
+  Added `test/pose_frame_test.dart` for frame packing / normalization.
 - **Configuration / security:** Real keys are entered at runtime and stored in
   secure storage — no real keys in tracked files, tokens, or credential files.
   `env.json` / `env.example.json` remain but are no longer required by AI
   features.
-- **Validation:** `dart format lib test` clean, `flutter analyze lib test`
-  **No issues found**, `flutter test` **55/55 passed**, and
-  `flutter build web --release` succeeded after the Plan-History change.
-  Built `build/web/assets/assets/fonts/` contains the bundled TTFs. Signed
-  Android release APK built and verified after the R8 fix; 55/55 tests still
-  pass. `flutter config --enable-windows-desktop` was restored after the
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **97/97 passed** (7 frame-packing, 4 new diet, 4 new Calories History, 2 new
+  YouTube-ID, 4 new return-to-form, and 6 new replay-landmark tests), and
+  `flutter build apk --debug` succeeded. `flutter build web --release`
+  succeeded earlier. Built `build/web/assets/assets/fonts/` contains the
+  bundled TTFs. Signed Android release APK built and verified after the R8
+  fix; a new signed APK still needs to be built for the 2026-11-24 fixes.
+  `flutter config --enable-windows-desktop` was restored after the
   temporary build workaround.
 - **Android release / signing:** Unique app ID `com.insectcs.workoutapp`,
   launcher label "Workout Tracking", version 1.0.0 (code 1), minSdk 24 /
@@ -125,8 +153,8 @@
   `c12b84b5dc519c096d3bf1aa3c70c88e747dd0a56c11cf6c0ffc962c7bd00c63`).
   APK SHA-256 (current fixed build):
   `d837f75266bf39af269e429d985f6108c1dd3cbe797cfd77e39cbc02615b8cc2`.
-  Backup outside the repo: `E:\test\keystore-backup\2026-11-20\` and
-  `E:\test\keystore-backup\workout-tracking-keystore-2026-11-20.zip`.
+  Backup outside the repo: `<backup-location>/2026-11-20/` and
+  `<backup-location>/workout-tracking-keystore-2026-11-20.zip`.
 - **Release build workarounds:** `android/build.gradle.kts` adds explicit
   `androidx.concurrent:concurrent-futures:1.2.0` to every Android module
   (CameraX 1.5 + Gradle 9 compile-classpath bug). `android/gradle.properties`
@@ -139,11 +167,12 @@
   bring-your-own-key, privacy, build notes). Added MIT `LICENSE` (copyright
   2026 insect-cs) and third-party `NOTICE`. Removed unreferenced demo media
   with unverifiable licensing; `.gitkeep` files retained.
-- **End-of-day save:** All 2026-11-20 work is captured above and in §5 Task
-  Log. Everything is committed, pushed and released. The authoritative
-  validation for this saved state is analyze clean, 55/55 tests passing, a
-  signed APK whose release download hash was re-verified, and user confirmation
-  that the app launches correctly on Android 16.
+- **End-of-day save:** All 2026-11-20/23/24 work is captured above and in §5
+  Task Log and is committed, pushed and released as v1.2.0. Authoritative
+  validation for the current tree: analyze clean, 97/97 tests passing, freshly
+  built signed APK with a verified v2 signature and checksum, and user
+  confirmation that the app launches on Android 16. The landmark, diet, export,
+  History, YouTube and return-button fixes still need on-device verification.
 - **Local run:** `flutter run` (no `--dart-define` needed now); VS Code configs
   / `run_local.bat` still pass `--dart-define-from-file=env.json` but it is no
   longer required.
@@ -275,10 +304,12 @@ Home now loads and bottom navigation works. Local-first persistence and bundled
 fonts added 2026-11-20. Single-session login, full key masking, and Plan
 History added the same day. Signed Android release APK published as GitHub
 v1.0.0 the same day; an Android 16 launch crash caused by AGP 9 R8 was fixed and
-the user confirmed the app works correctly. Latest validation (authoritative):
-`flutter analyze lib test` no issues, `flutter test` 55/55 passed,
-`flutter build web --release` succeeded, release APK signature and download
-hash verified.
+the user confirmed the app works correctly. On 2026-11-24 the Android live
+camera landmark pipeline was repaired (see §5); this change is uncommitted and
+awaiting on-device verification. Latest validation (authoritative):
+`flutter analyze lib test android` no issues, `flutter test` 97/97 passed,
+`flutter build apk --debug` succeeded, `flutter build web --release` succeeded
+previously, release APK signature and download hash verified.
 
 **Pose tracking (web/mobile):**
 - Real-time skeleton over playing video / live camera (mobile) ✅
@@ -308,7 +339,7 @@ hash verified.
 ## 4. Environment / Commands
 
 ```bash
-cd E:\test\workout_app
+cd <project-root>
 flutter pub get
 flutter analyze          # expect pre-existing withOpacity infos only, 0 errors/warnings
 flutter run -d chrome    # web
@@ -321,8 +352,8 @@ flutter build web --release
 - Web build time ~150–195 s; use `flutter build web --release` as compile check
 - PowerShell note: `flutter analyze` stderr trips PowerShell NativeCommandError;
   pipe through `Out-File` then filter, e.g.
-  `flutter analyze --no-pub 2>&1 | Out-File -Encoding utf8 E:\test\analyze_out.txt`
-- Workspace root `E:\test` is not a repo, but `E:\test\workout_app` **is** a Git
+  `flutter analyze --no-pub 2>&1 | Out-File -Encoding utf8 analyze_out.txt`
+- The workspace root is not a repo, but the `workout_app` directory **is** a Git
   repo (`main`, origin configured). Use Git for snapshots; keep this file as the
   human-readable context companion.
 
@@ -833,7 +864,7 @@ flutter build web --release
   release JKS with alias `workoutapp`, and wired signing via git-ignored
   `android/key.properties`. Built and verified the signed APK: v2 signature,
   cert `CN=Workout Tracking`, correct app ID/version, no embedded API key.
-  Created a keystore backup outside the repo at `E:\test\keystore-backup\`.
+  Created a keystore backup outside the repo at `<backup-location>`.
 - **Build blockers fixed:** Kotlin cross-drive incremental cache
   (`kotlin.incremental=false`), Windows symlink requirement (temporarily
   `flutter config --no-enable-windows-desktop`, restored afterwards), CameraX
@@ -847,7 +878,7 @@ flutter build web --release
   old `.../com/example/workout_app/MainActivity.kt` (deleted),
   `android/build.gradle.kts`, `android/gradle.properties`,
   `android/key.properties` (ignored), `android/app/release-keystore.jks`
-  (ignored), `E:\test\keystore-backup\*` (outside repo).
+  (ignored), `<backup-location>/*` (outside repo).
 - **Result:** `flutter test` 55/55; signed `app-release.apk` produced, signature
   and binary secret scan verified; keystore backup hashes matched the originals
   and the JKS opened with the stored password.
@@ -1090,6 +1121,245 @@ flutter build web --release
   update checker now sees `v1.1.0` as the latest release and reports
   “You're up to date” for this build.
 
+### 2026-11-24 — Fix Android 16 live camera: no landmarks / angles / reps
+- **Reported by user:** On an Android 16 device, Pose Tracking → Live Squat
+  Tracking opened the camera picker and the stream started, but no landmarks
+  were drawn and exercise identification, elbow/knee angles and rep count never
+  updated.
+- **Root cause:** The native frame pipeline fed raw `CameraImage` data straight
+  to ML Kit:
+  - `camera_android_camerax` can return an NV21 buffer with padding from the Y
+    plane row stride, making it longer than `width × height × 1.5`. ML Kit
+    rejects that with `Image dimension, ByteBuffer size and format don't match`;
+    the old code caught the exception and returned null, so the UI only ever
+    said "No person detected".
+  - Some devices deliver three YUV_420_888 planes even when NV21 is requested.
+  - Landmarks were normalized by the largest landmark coordinate (`maxX`/`maxY`)
+    instead of the real rotated frame size, distorting the skeleton and angles.
+  - `_cameraController` was stored only after `startVideoRecording()` returned,
+    so all early frames were dropped by `_processLiveFrame`.
+- **Fix (`lib/services/pose_analysis_service.dart`):**
+  - Added `packedNv21FromCameraImage()` — trims padded single-plane NV21 to the
+    exact ML Kit size and converts 3-plane YUV_420_888 (with row/pixel strides)
+    into interleaved NV21. iOS keeps its BGRA metadata path.
+  - Added `poseFrameSize()` — swaps width/height for 90°/270° rotations so
+    normalized landmarks line up with the preview.
+  - Live detection now falls back from STREAM to SINGLE detector mode when no
+    pose is returned, and probes the other three rotations after 8 empty frames
+    if the device reports a mismatched sensor orientation (locks in the working
+    rotation for the session). Session start calls `resetLiveTracking()`.
+  - Native errors are exposed via `lastNativeDetectionError` instead of being
+    silently swallowed; `dispose()` also closes the streaming detector.
+- **Fix (`lib/screens/pose_tracking_screen.dart`):**
+  - Stores the active camera/controller **before** `startImageStream()`;
+    `_processLiveFrame` uses the stored description.
+  - `startVideoRecording()` is now non-blocking/optional (`_startRecordingIfPossible`).
+  - Native detection errors appear in a live-preview badge and in the stats
+    card, with a real "Frame error" message if processing throws.
+- **Tests:** Added `test/pose_frame_test.dart` (7 tests): exact-size NV21,
+  padded NV21 trimming, short-buffer rejection, YUV_420_888 → NV21 order,
+  stride handling, and rotation-aware frame sizing.
+- **Validation:** `dart format` clean, `flutter analyze lib test` **No issues
+  found**, `flutter test` **79/79 passed** (including widget/smoke tests).
+- **Status:** Changes are **uncommitted**; no new APK built or released yet.
+  Next: commit/push, build a signed APK, and ask the user to verify on the
+  Android 16 device. The on-screen error badge will expose any remaining
+  device-specific detector failure.
+
+### 2026-11-24 — Diet planner slot colours, Rest goals, quantity units, Downloads exports
+- **Requested by user:**
+  1. Diet time slots with an activity should be green; idle slots red, and an
+     empty slot should turn green as soon as it is filled.
+  2. Add editable Rest/sleep goals to both Daily and Weekly goals.
+  3. Food activity quantity should offer `g`, `mg`, `ml`, `pcs` units.
+  4. Diet summary and exercise-tracking progress exports (CSV/PDF) must be
+     saved into the device Downloads folder, visible from a file manager.
+- **Slot colours (`lib/screens/diet_screen.dart`):** `_slotTile` now fills
+  emerald when the hour has entries and rose when empty; selection is shown by
+  an orange border. Added `Semantics` labels (`Filled slot HH:00` /
+  `Empty slot HH:00`) and updated the helper text.
+- **Rest goals (`lib/models/diet_models.dart`, `lib/state/diet_state.dart`):**
+  added `restGoalMinutes` to `DietDay` (default 480 min) and `DietWeekGoals`
+  (default 3360 min), with JSON persistence, `restProgress`, remaining values,
+  and inclusion in the 50%-goal status. `setGoals`/`setWeekGoals` accept the new
+  value; `addEntry`/`removeEntry` preserve it. Defaults are derived from the
+  Monday daily goal for unsaved weeks. Added editable "REST GOAL" / "WEEK REST
+  GOAL" fields, DEFAULT/Restore support and progress rows to the UI.
+- **Food quantity units:** added `kFoodQuantityUnits = [g, mg, ml, pcs]` and a
+  unit selector in the food editor. Plain numeric amounts are sent to Gemini
+  as `value unit`; free-form quantities still pass through unchanged.
+  `DietEntry.quantityUnit` is persisted and included in the summary exports.
+- **Downloads exports:** `ExportService.saveBytes` now calls
+  `saveToAndroidDownloads()` first on Android. New `download_saver*.dart` files
+  bridge to a `MethodChannel` (`com.insectcs.workoutapp/downloads`) implemented
+  in `android/app/src/main/kotlin/.../MainActivity.kt` using `MediaStore.Downloads`
+  with `DISPLAY_NAME`, `MIME_TYPE`, `RELATIVE_PATH = Download`, and `IS_PENDING`
+  so no storage permission is required on Android 16. Non-Android/native and
+  failed channel calls keep the existing app-documents fallback; web still
+  triggers a browser download. This covers both diet summary exports and the
+  Progress graph exports because they share `saveBytes`.
+- **Exports content:** diet CSV/PDF now include the weekly Rest goal, per-day
+  Rest goal, and the food quantity unit column.
+- **Tests:** extended `test/diet_test.dart` with Rest-goal state/JSON tests,
+  quantity-unit persistence plus a widget check that all four units are
+  offered, and slot colour semantics checks before/after filling a slot.
+- **Validation:** `dart format` clean, `flutter analyze lib test android`
+  **No issues found**, `flutter test` **81/81 passed** at the time, and
+  `flutter build apk --debug` succeeded (new Kotlin channel compiles).
+- **Status:** **Uncommitted**; no release APK built yet. Needs on-device
+  verification of coloured slots, goal editing and Downloads visibility.
+
+### 2026-11-24 — Calories/BMI response History tab
+- **Requested by user:** Add a Save response button at the end of both the
+  Gemini-generated weekly calorie estimate and the BMI result; store those saved
+  responses in a new History tab just beside BMI calculate.
+- **Third tab (`lib/screens/calories_screen.dart`):** the Calories tab bar is now
+  `Weekly estimate | BMI calculate | History`. Added `_formTabIndex` so visiting
+  History preserves the last generator tab and its CTA label/scope. The bottom
+  CTA is hidden on History, and the persisted tab index is bounds-checked to
+  0–2.
+- **Save flow:** `_resultScaffold` appends **Save to History** at the end of both
+  result views. It becomes **Saved to History** (disabled) once the response id
+  is in History, with a **View History** button that clears the current result
+  and animates to tab 2. Generating a new weekly/BMI result also clears the
+  opposite result so a stale response cannot be shown.
+- **Persistence (`lib/models/calories_models.dart`,
+  `lib/services/calorie_history_service.dart`):** new `SavedCalorieEntry`
+  wrapper (separate history id/kind/savedAt around the response) and
+  `CalorieHistoryStore` backed by the namespaced `LocalStore` key
+  `workout_app.calories_history.v1`. Entries are newest-first, session-scoped,
+  reopenable, and deletable through an `AppDialog` confirmation.
+- **History UI:** empty state plus cards with title, response kind, preview,
+  saved timestamp, **Open saved response**, and a delete icon. Reopening a card
+  restores the exact weekly estimate or BMI result screen.
+- **Tests:** extended `test/calories_screen_test.dart` with four tests — History
+  tab empty state, weekly save/reopen, BMI save, and history JSON/session
+  scoping. Full suite was 85/85 at the time; 87/87 after the YouTube fix.
+- **Validation:** `dart format` clean, `flutter analyze lib test android`
+  **No issues found**, `flutter test` **85/85 passed** at the time. This task
+  changed no native code; the previous debug APK build still covers the Android
+  channel.
+- **Status:** **Uncommitted**; needs on-device UI verification.
+
+### 2026-11-24 — Android YouTube links: preserve case-sensitive video IDs
+- **Reported by user:** Android YouTube links showed “Video unavailable” in the
+  YouTube app or “page isn't available” in the mobile browser, although the same
+  links worked in the web build.
+- **Root cause:** `VideoLaunchService` built `vnd.youtube://<videoId>`. Dart
+  normalises URI hosts to lowercase, so a mixed-case ID such as `8iPEnn-ltC8`
+  became `8ipenn-ltc8`. YouTube IDs are case-sensitive, so the app rejected the
+  video. The custom scheme also had no useful fallback once the app opened.
+- **Fix (`lib/services/video_launcher_service.dart`):** removed the
+  `vnd.youtube://` host deep link. Direct video URLs are normalised to
+  `https://www.youtube.com/watch?v=<id>`, keeping the ID in the query string
+  where its case is preserved. Android App Links open the YouTube app when
+  installed; otherwise the same HTTPS page opens in the browser. Added strict
+  11-character ID validation and a YouTube search-URL fallback when a supplied
+  link has no valid ID (both callers now pass the exercise name as
+  `searchQuery`).
+- **Shared parser:** added public `youTubeVideoId()` and `canonicalWatchUrl()`;
+  `plan_screen.dart`'s `youtubeVideoIdFromUrl()` now delegates to them, so
+  thumbnails and launches use the same case-sensitive logic.
+- **Tests:** extended `test/plan_video_test.dart` with mixed-case ID
+  preservation across `youtu.be`, `m.youtube.com/watch`, and `/shorts`, plus
+  rejection of malformed and search URLs. Full suite was 87/87 at the time;
+  91/91 after the return-to-form buttons were added.
+- **Validation:** `dart format` clean, `flutter analyze lib test android`
+  **No issues found**, `flutter test` **87/87 passed** at the time. No
+  native/manifest changes were needed.
+- **Status:** **Uncommitted**; needs on-device verification with a mixed-case ID
+  exercise such as Incline Dumbbell Press (`8iPEnn-ltC8`).
+
+### 2026-11-24 — Generated results return to the edit screen
+- **Requested by user:** End every Gemini-generated Plan result (weekly and
+  single day) and Calories result (weekly estimate and BMI) with a
+  **Go to previous screen** button that sends the user back to the edit form.
+- **Plan (`lib/screens/plan_screen.dart`):** `_buildResultView` now ends with an
+  outlined **Go to previous screen** button after **Create another plan**. Its
+  `_returnToEditScreen` clears the persisted result and animates to the tab that
+  matches `plan.scope` (Weekly = 0, Single day = 1). Using the result's scope
+  instead of `_formTabIndex` also handles plans reopened from History while the
+  tab controller is on tab 2.
+- **Calories (`lib/screens/calories_screen.dart`):** `_resultScaffold` now takes
+  `isWeekly` and ends with the same button after **Create another estimate**.
+  `_returnToEditScreen` clears both persisted results and restores the matching
+  form (Weekly estimate = 0, BMI calculate = 1), including saved responses
+  reopened from History.
+- **Tests:** added two Plan tests (one per `PlanScope`) and two Calories tests
+  (weekly/BMI). Each prewrites the result JSON, taps the new button, and asserts
+  that the result is gone and the correct form CTA is visible. Full suite was
+  91/91 at the time; 97/97 after the replay-landmark work.
+- **Validation:** `dart format` clean, `flutter analyze lib test android`
+  **No issues found**, `flutter test` **91/91 passed** at the time, and
+  `flutter build apk --debug` succeeded. No native/manifest changes.
+- **Status:** **Uncommitted**; needs on-device verification with a freshly built
+  APK.
+
+### 2026-11-24 — Recorded landmarks on live-session replay video
+- **Requested by user:** A live tracking session's saved video preview in Pose
+  History should show the landmarks that were recorded during live tracking,
+  not just the video and metrics.
+- **Capture (`lib/screens/pose_tracking_screen.dart`):** `_processLiveFrame`
+  now calls `_recordPoseFrame()` after a successful detection. Samples are timed
+  from `_videoRecordingStartedAt` (set when `startVideoRecording()` completes),
+  throttled to 5 fps, capped at 3600 samples (12 minutes), and skipped for
+  frames with no usable visualised landmark. Each sample is compacted to the
+  13 landmarks drawn by `PoseSkeletonPainter`.
+- **Persistence (`lib/models/pose_history_models.dart`):** new
+  `PoseReplayFrame` stores `tMs` plus a flat integer array (x/y quantised to
+  0..1000, confidence to 0..100). `LiveTrackingSession.poseFrames` is optional
+  and backwards-compatible; `landmarksMirroredX` records the front-camera
+  mirror state so replay can flip samples back onto the raw recorded video.
+  The existing `keypoints` last-frame snapshot is preserved for older sessions.
+- **Replay (`lib/screens/live_tracking_history_screen.dart`,
+  `lib/widgets/pose_replay_overlay.dart`):** `_SessionVideoPlayer` listens to
+  playback position and rebuilds only when the nearest recorded sample changes.
+  A `PoseReplayOverlay` paints that sample with `PoseSkeletonPainter` inside the
+  video's `AspectRatio`, so the skeleton tracks the person as the clip plays.
+  The old standalone orange skeleton card now appears only for legacy sessions
+  without timed frames.
+- **Tests:** added `test/pose_replay_test.dart` (quantization, JSON round-trip,
+  malformed/legacy frames, timestamp lookup, overlay painting and front-camera
+  unmirroring) and extended the persistence round-trip fixture. Full suite is
+  97/97.
+- **Validation:** `dart format` clean, `flutter analyze lib test android`
+  **No issues found**, `flutter test` **97/97 passed**, and
+  `flutter build apk --debug` succeeded. No native/manifest changes.
+- **Status:** Included in v1.2.0; needs on-device verification with a live
+  session recorded on the Android 16 device.
+
+### 2026-11-24 — Secret audit and v1.2.0 release
+- **Requested by user:** Before pushing to GitHub and uploading an updated APK
+  to GitHub Releases, verify that no sensitive data would be published.
+- **Audit:** Scanned the working-tree diff, all untracked files, tracked source
+  and both APKs for real API-key, token, private-key and signing-password
+  patterns: **0 hits**. `env.json`, `android/key.properties`,
+  `android/app/release-keystore.jks`, Gradle caches and `build/` remain ignored
+  and untracked; no `git add -f` was used. The only key-like strings in tests
+  are obvious placeholders (`AIzaSyAbCdEfGh1234567890`, `SECRET_KEY_VALUE`).
+  Local absolute paths in `PROJECT_STATE.md` were replaced with generic
+  `<project-root>` / `<backup-location>` placeholders.
+- **APK:** Bumped `pubspec.yaml` to `1.2.0+3`; `flutter build apk --release`
+  produced a universal signed APK at
+  `build/app/outputs/flutter-apk/app-release.apk` (105,607,424 bytes).
+  `apksigner verify --print-certs` confirmed a valid **v2** signature from the
+  existing `CN=Workout Tracking` certificate (SHA-256 digest
+  `c12b84b5dc519c096d3bf1aa3c70c88e747dd0a56c11cf6c0ffc962c7bd00c63`).
+  `aapt2 dump badging` confirmed `versionCode=3`, `versionName=1.2.0`, app ID
+  `com.insectcs.workoutapp`. APK SHA-256:
+  `26a05c1f37801e663b190431e6cdd6989354c30d3816e3ab8465c6181618c885`.
+- **Git/GitHub:** Local commit author was switched to
+  `insect-cs@users.noreply.github.com` for this release. `main` and annotated
+  tag **v1.2.0** were pushed. `gh` CLI is not installed, so the release and
+  assets were published through the GitHub REST API using the cached git
+  credential (token never printed or written to the repo). Release:
+  https://github.com/insect-cs/Workout_Tracking_App/releases/tag/v1.2.0
+- **Validation:** `flutter analyze lib test android` clean, `flutter test`
+  **97/97 passed**, `flutter build apk --release` succeeded, strict secret scan
+  of the fresh APK found 0 hits.
+- **Status:** **Published**; only remaining work is the user's on-device
+  verification pass.
+
 ---
 
 ## 6. Gotchas / Lessons Learned
@@ -1191,6 +1461,33 @@ flutter build web --release
 30. **Unreferenced asset folders are still bundled:** `pubspec.yaml` directory
     entries (e.g. `assets/videos/`) include every file in the folder. Remove
     unused media to keep the APK small and licensing clean.
+31. **ML Kit NV21 must be exact-size:** `InputImage.fromBytes` throws unless the
+    buffer is exactly `width × height × 1.5`; CameraX can add Y-plane padding or
+    hand back YUV_420_888 planes. Always repack streamed frames before passing
+    them to ML Kit, and surface the native error in the UI — catching it and
+    showing "no person detected" hides real device-specific failures.
+32. **Android 16 exports must use MediaStore/SAF:** `getApplicationDocumentsDirectory()`
+    is app-private and invisible to file managers; `WRITE_EXTERNAL_STORAGE` is
+    useless for targetSdk 36. Writing app-created files through
+    `MediaStore.Downloads` needs no storage permission and makes CSV/PDF
+    exports visible in the device Downloads folder.
+33. **Never put a YouTube ID in a URI host:** Dart lowercases `Uri.host`, and
+    YouTube IDs are case-sensitive. `vnd.youtube://8iPEnn-ltC8` launches
+    `8ipenn-ltc8` and shows “Video unavailable”. Keep the ID in the query string
+    of a canonical `https://www.youtube.com/watch?v=<id>` URL (or use the opaque
+    `vnd.youtube:<id>` form) to preserve case.
+34. **Return buttons should use the result's own type:** generated results are
+    in-screen overlays, not routes. When adding a “Go to previous screen” CTA,
+    clear the persisted result first, then animate the existing `TabController`
+    to the form matching the result (`plan.scope`, weekly vs BMI), not the
+    currently selected tab. Otherwise a result reopened from History sends the
+    user back to History because its controller index is 2.
+35. **Replay landmarks need their own clock:** saved video and pose samples are
+    captured by different async subsystems. Time each compact skeleton from
+    `startVideoRecording()` completion, sample at ~5 fps with a hard cap, and
+    select the nearest sample from `VideoPlayerController.position`. Do not
+    store every ML Kit frame — it would bloat the single encrypted Hive JSON
+    value and slow every history read.
 
 ---
 
@@ -1221,9 +1518,18 @@ flutter build web --release
 - [x] Push the local commit/tag(s) to `origin/main` (done).
 - [x] Commit/push v1.1.0, tag `v1.1.0`, and publish the GitHub release with the
       signed APK plus checksum (done 2026-11-23; see §5 release entry).
-- [ ] User verification: continued Android 16 testing after the R8 fix (user is
-      testing and will report any further issues).
-- [ ] Copy the keystore backup ZIP from `E:\test\keystore-backup\` to durable,
-      offline storage (password manager or external drive).
+- [x] Commit/push the 2026-11-24 fixes, tag **v1.2.0**, and publish the signed
+      APK plus checksum (done 2026-11-24; see §5 release entry).
+- [ ] User verification on the Android 16 device: landmarks, exercise ID,
+      knee/elbow angles and rep counts update live; diet slots show green/red
+      correctly; Rest goals save; food units appear; CSV/PDF exports are
+      visible in Downloads from a file manager; Calories/BMI results save to
+      and reopen from the new History tab; YouTube demos open with the correct
+      mixed-case video ID; **Go to previous screen** returns every generated
+      result to the right edit form; and saved live-session videos replay their
+      recorded landmarks. If the on-screen detection badge still shows an
+      error, use that text to diagnose the remaining device-specific issue.
+- [ ] Copy the keystore backup ZIP from `<backup-location>` to durable, offline
+      storage (password manager or external drive).
 - [ ] Revisit build workarounds (`kotlin.incremental=false`, explicit
       concurrent-futures dependency, R8 keeps) when Flutter/AGP versions move on.

@@ -18,6 +18,9 @@ class DietExportService {
     sb.writeln('Generated,${data.generatedAt}');
     sb.writeln('Week Calorie Goal (kcal),${data.weekCalorieGoal}');
     sb.writeln('Week Water Goal (ml),${data.weekWaterGoalMl}');
+    sb.writeln(
+      'Week Rest Goal,${_csvCell(_fmtSleep(data.weekRestGoalMinutes))}',
+    );
     sb.writeln();
 
     sb.writeln('SUMMARY');
@@ -36,12 +39,13 @@ class DietExportService {
     sb.writeln('DAILY BREAKDOWN');
     sb.writeln(
       'Date,Calorie Goal (kcal),Calories Eaten (kcal),Water Goal (ml),'
-      'Water Drunk (ml),Sleep,Activities,50%+ Goal',
+      'Water Drunk (ml),Rest Goal,Sleep,Activities,50%+ Goal',
     );
     for (final day in data.days) {
       sb.writeln(
         '${_date(day.date)},${day.calorieGoal},${day.caloriesConsumed},'
         '${day.waterGoalMl},${day.waterConsumedMl},'
+        '${_csvCell(_fmtSleep(day.restGoalMinutes))},'
         '${_csvCell(_fmtSleep(day.sleepMinutes))},${day.activityCount},'
         '${day.isGoalHalfMet ? 'Yes' : 'No'}',
       );
@@ -50,15 +54,16 @@ class DietExportService {
 
     sb.writeln('ACTIVITY LOG');
     sb.writeln(
-      'Date,Slot,Type,Label,Detail,Calories (kcal),Water (ml),Sleep (min)',
+      'Date,Slot,Type,Label,Detail,Quantity Unit,Calories (kcal),'
+      'Water (ml),Sleep (min)',
     );
     for (final item in data.entries) {
       final entry = item.entry;
       sb.writeln(
         '${_date(item.date)},${_csvCell(slotLabel(entry.slotHour))},'
         '${entry.type.name},${_csvCell(entry.label)},'
-        '${_csvCell(entry.detail)},${entry.calories},${entry.waterMl},'
-        '${entry.sleepMinutes}',
+        '${_csvCell(entry.detail)},${entry.quantityUnit ?? ''},'
+        '${entry.calories},${entry.waterMl},${entry.sleepMinutes}',
       );
     }
 
@@ -74,9 +79,13 @@ class DietExportService {
       ['Calories consumed', '${data.totalCalories} kcal'],
       ['Water consumed', '${data.totalWaterMl} ml'],
       ['Total sleep', _fmtSleep(data.totalSleepMinutes)],
-      ['Food / Water / Rest', '${data.foodCount} / ${data.waterCount} / ${data.restCount}'],
+      [
+        'Food / Water / Rest',
+        '${data.foodCount} / ${data.waterCount} / ${data.restCount}',
+      ],
       ['Week calorie goal', '${data.weekCalorieGoal} kcal'],
       ['Week water goal', '${data.weekWaterGoalMl} ml'],
+      ['Week rest goal', _fmtSleep(data.weekRestGoalMinutes)],
     ];
 
     final dailyRows = data.days
@@ -85,7 +94,7 @@ class DietExportService {
             _date(day.date),
             '${day.caloriesConsumed}/${day.calorieGoal}',
             '${day.waterConsumedMl}/${day.waterGoalMl}',
-            _fmtSleep(day.sleepMinutes),
+            '${_fmtSleep(day.sleepMinutes)}/${_fmtSleep(day.restGoalMinutes)}',
             day.isGoalHalfMet ? 'Yes' : 'No',
           ],
         )
@@ -99,11 +108,12 @@ class DietExportService {
             item.entry.type.name,
             item.entry.label,
             item.entry.detail,
+            item.entry.quantityUnit ?? '',
             item.entry.type == DietActivityType.food
                 ? '${item.entry.calories} kcal'
                 : item.entry.type == DietActivityType.water
-                    ? '${item.entry.waterMl} ml'
-                    : _fmtSleep(item.entry.sleepMinutes),
+                ? '${item.entry.waterMl} ml'
+                : _fmtSleep(item.entry.sleepMinutes),
           ],
         )
         .toList();
@@ -149,10 +159,13 @@ class DietExportService {
             style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 6),
-          _table(
-            ['Date', 'Calories (eaten/goal)', 'Water ml (drunk/goal)', 'Sleep', '50%+'],
-            dailyRows,
-          ),
+          _table([
+            'Date',
+            'Calories (eaten/goal)',
+            'Water ml (drunk/goal)',
+            'Sleep/rest goal',
+            '50%+',
+          ], dailyRows),
           pw.SizedBox(height: 14),
           pw.Text(
             'Activity Log',
@@ -160,7 +173,7 @@ class DietExportService {
           ),
           pw.SizedBox(height: 6),
           _table(
-            ['Date', 'Slot', 'Type', 'Label', 'Detail', 'Value'],
+            ['Date', 'Slot', 'Type', 'Label', 'Detail', 'Unit', 'Value'],
             activityRows,
             fontSize: 8,
           ),

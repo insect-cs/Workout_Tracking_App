@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/calories_models.dart';
+import '../services/calorie_history_service.dart';
 import '../services/calories_service.dart';
 import '../services/local_store.dart';
 import '../theme/app_colors.dart';
 import '../widgets/api_key_dialog.dart';
+import '../widgets/app_dialog.dart';
 
 class _CalorieFormData {
   _CalorieFormData();
@@ -73,6 +75,8 @@ class _CaloriesScreenState extends State<CaloriesScreen>
   String? _error;
   WeeklyCalorieEstimate? _weeklyResult;
   BmiEstimate? _bmiResult;
+  List<SavedCalorieEntry> _history = const <SavedCalorieEntry>[];
+  int _formTabIndex = 0;
   int _lastTabIndex = 0;
 
   static const List<String> _genders = ['Male', 'Female', 'Other'];
@@ -104,16 +108,23 @@ class _CaloriesScreenState extends State<CaloriesScreen>
       }
     }
 
-    final savedTab = LocalStore.instance.readInt(_tabKey);
+    _history = CalorieHistoryStore.read();
+
+    final savedTab = LocalStore.instance.readInt(_tabKey) ?? 0;
+    final initialTab = savedTab >= 0 && savedTab <= 2 ? savedTab : 0;
+    // History is not a form: keep the last generator tab so the CTA label and
+    // scope do not change when the user visits History.
+    _formTabIndex = initialTab == 1 ? 1 : 0;
     _tabController = TabController(
-      length: 2,
+      length: 3,
       vsync: this,
-      initialIndex: savedTab == 1 ? 1 : 0,
+      initialIndex: initialTab,
     );
     _lastTabIndex = _tabController.index;
     _tabController.addListener(() {
       if (_tabController.index != _lastTabIndex) {
         _lastTabIndex = _tabController.index;
+        if (_lastTabIndex != 2) _formTabIndex = _lastTabIndex;
         unawaited(LocalStore.instance.write(_tabKey, _lastTabIndex));
         if (mounted) setState(() {});
       }
@@ -141,6 +152,118 @@ class _CaloriesScreenState extends State<CaloriesScreen>
     _persistResults();
   }
 
+  bool get _isCurrentResultSaved {
+    final weekly = _weeklyResult;
+    if (weekly != null) {
+      return _history.any((entry) => entry.weekly?.id == weekly.id);
+    }
+    final bmi = _bmiResult;
+    return bmi != null && _history.any((entry) => entry.bmi?.id == bmi.id);
+  }
+
+  Future<void> _saveCurrentResultToHistory() async {
+    final weekly = _weeklyResult;
+    final bmi = _bmiResult;
+    if (weekly == null && bmi == null) return;
+
+    final entry = weekly != null
+        ? await CalorieHistoryStore.saveWeekly(weekly)
+        : await CalorieHistoryStore.saveBmi(bmi!);
+    if (!mounted) return;
+
+    setState(() {
+      _history = <SavedCalorieEntry>[
+        entry,
+        ..._history.where((existing) => existing.id != entry.id),
+      ];
+    });
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.cardSurface,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: AppColors.emerald),
+        ),
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: AppColors.emerald, size: 20),
+            const SizedBox(width: 10),
+            Text(
+              'Response saved to History',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textWhite,
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _openHistoryFromResult() {
+    _clearResults();
+    _tabController.animateTo(2);
+  }
+
+  /// Leaves a generated result and restores the matching input form. Using the
+  /// result type (rather than the current tab) also handles saved responses
+  /// reopened from History, where the tab controller is on tab 2.
+  void _returnToEditScreen({required bool weekly}) {
+    final tabIndex = weekly ? 0 : 1;
+    _formTabIndex = tabIndex;
+    _clearResults();
+    _tabController.animateTo(tabIndex);
+  }
+
+  void _openSavedEntry(SavedCalorieEntry entry) {
+    setState(() {
+      _weeklyResult = entry.weekly;
+      _bmiResult = entry.bmi;
+    });
+    _persistResults();
+  }
+
+  Future<void> _confirmDeleteSavedEntry(SavedCalorieEntry entry) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        backgroundColor: AppColors.cardSurface,
+        title: Text(
+          'Delete saved response?',
+          style: GoogleFonts.spaceGrotesk(
+            fontWeight: FontWeight.bold,
+            color: AppColors.textWhite,
+          ),
+        ),
+        content: Text(
+          '“${entry.title}” will be removed from History.',
+          style: GoogleFonts.inter(color: AppColors.textSlate),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await CalorieHistoryStore.remove(entry.id);
+    if (!mounted) return;
+    setState(() {
+      _history = _history.where((saved) => saved.id != entry.id).toList();
+    });
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -148,7 +271,11 @@ class _CaloriesScreenState extends State<CaloriesScreen>
     super.dispose();
   }
 
-  bool get _isWeekly => _tabController.index == 0;
+  bool get _isWeekly => _formTabIndex == 0;
+
+  bool get _hasResult => _weeklyResult != null || _bmiResult != null;
+
+  bool get _isHistoryTab => !_hasResult && _tabController.index == 2;
 
   String get _generateLabel =>
       _isWeekly ? 'Generate Estimate' : 'Generate results';
@@ -195,6 +322,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
         if (!mounted) return;
         setState(() {
           _weeklyResult = result;
+          _bmiResult = null;
           _isGenerating = false;
         });
         _persistResults();
@@ -203,6 +331,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
         if (!mounted) return;
         setState(() {
           _bmiResult = result;
+          _weeklyResult = null;
           _isGenerating = false;
         });
         _persistResults();
@@ -218,7 +347,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
 
   @override
   Widget build(BuildContext context) {
-    final hasResult = _weeklyResult != null || _bmiResult != null;
+    final hasResult = _hasResult;
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -239,10 +368,11 @@ class _CaloriesScreenState extends State<CaloriesScreen>
                           children: [
                             _buildForm(showActivity: true),
                             _buildForm(showActivity: false),
+                            _buildHistoryView(),
                           ],
                         ),
                 ),
-                if (!hasResult) _buildBottomBar(),
+                if (!hasResult && !_isHistoryTab) _buildBottomBar(),
               ],
             ),
           ),
@@ -347,9 +477,208 @@ class _CaloriesScreenState extends State<CaloriesScreen>
         tabs: const [
           Tab(text: 'Weekly estimate'),
           Tab(text: 'BMI calculate'),
+          Tab(icon: Icon(Icons.history, size: 18), text: 'History'),
         ],
       ),
     );
+  }
+
+  Widget _buildHistoryView() {
+    if (_history.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+        children: [
+          const SizedBox(height: 36),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppColors.cardSurface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.orangeSoft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    Icons.history_toggle_off,
+                    color: AppColors.primaryOrange,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'No saved responses yet',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textWhite,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Generate a weekly estimate or BMI result, then tap '
+                  '“Save to History” at the end of the response.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.textSlate,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+      children: [
+        Row(
+          children: [
+            Icon(Icons.history, color: AppColors.primaryOrange, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              'SAVED RESPONSES',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.1,
+                color: AppColors.textWhite,
+              ),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.orangeSoft,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.orangeBorder),
+              ),
+              child: Text(
+                '${_history.length}',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaryOrange,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        for (final entry in _history) _buildHistoryCard(entry),
+      ],
+    );
+  }
+
+  Widget _buildHistoryCard(SavedCalorieEntry entry) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.orangeSoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  entry.isWeekly ? Icons.calendar_month : Icons.straighten,
+                  color: AppColors.primaryOrange,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textWhite,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      entry.isWeekly ? 'Weekly estimate' : 'BMI calculation',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primaryOrange,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: () => _confirmDeleteSavedEntry(entry),
+                tooltip: 'Delete saved response',
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: AppColors.rose,
+                  size: 20,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            entry.preview,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: AppColors.textSlate,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Saved ${_formatSavedAt(entry.savedAt)}',
+            style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSlate),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _openSavedEntry(entry),
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Open saved response'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatSavedAt(DateTime value) {
+    String two(int part) => part.toString().padLeft(2, '0');
+    return '${value.year}-${two(value.month)}-${two(value.day)} '
+        '${two(value.hour)}:${two(value.minute)}';
   }
 
   Widget _buildForm({required bool showActivity}) {
@@ -655,8 +984,10 @@ class _CaloriesScreenState extends State<CaloriesScreen>
 
   Widget _resultScaffold({
     required String badge,
+    required bool isWeekly,
     required List<Widget> children,
   }) {
+    final saved = _isCurrentResultSaved;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
       children: [
@@ -692,11 +1023,54 @@ class _CaloriesScreenState extends State<CaloriesScreen>
         SizedBox(
           width: double.infinity,
           height: 48,
+          child: FilledButton.icon(
+            onPressed: saved ? null : _saveCurrentResultToHistory,
+            icon: Icon(
+              saved ? Icons.check_circle : Icons.bookmark_add,
+              size: 18,
+            ),
+            label: Text(
+              saved ? 'Saved to History' : 'Save to History',
+              style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        if (saved) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: _openHistoryFromResult,
+              icon: const Icon(Icons.history, size: 16),
+              label: Text(
+                'View History',
+                style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
           child: OutlinedButton.icon(
             onPressed: _clearResults,
             icon: const Icon(Icons.refresh),
             label: Text(
               'Create another estimate',
+              style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: () => _returnToEditScreen(weekly: isWeekly),
+            icon: const Icon(Icons.arrow_back),
+            label: Text(
+              'Go to previous screen',
               style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
             ),
           ),
@@ -708,6 +1082,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
   Widget _buildWeeklyResult(WeeklyCalorieEstimate result) {
     return _resultScaffold(
       badge: 'WEEKLY ESTIMATE',
+      isWeekly: true,
       children: [
         const SizedBox(height: 8),
         Text(
@@ -840,6 +1215,7 @@ class _CaloriesScreenState extends State<CaloriesScreen>
   Widget _buildBmiResult(BmiEstimate result) {
     return _resultScaffold(
       badge: 'BMI RESULT',
+      isWeekly: false,
       children: [
         const SizedBox(height: 16),
         Row(

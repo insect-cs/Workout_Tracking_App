@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../models/workout_models.dart';
 import '../web/file_downloader.dart';
+import 'download_saver.dart';
 
 /// One aggregate data point of the progress graph (a time bin/column).
 typedef GraphPoint = ({String label, double value});
@@ -267,8 +268,9 @@ class ExportService {
     return 'progress_${timeframe.toLowerCase()}_$stamp.$ext';
   }
 
-  /// Writes export bytes to Documents on mobile/desktop, or triggers a browser
-  /// download on web. Shared with the diet summary exporter.
+  /// Saves export bytes to Android Downloads (visible in a file manager), to
+  /// the browser download folder on web, or to app documents elsewhere.
+  /// Shared with the diet summary exporter.
   static Future<String> saveBytes(
     String name,
     List<int> bytes,
@@ -279,6 +281,9 @@ class ExportService {
       downloadBytes(name, bytes, mime);
       return name;
     }
+
+    final downloadsPath = await saveToAndroidDownloads(name, bytes, mime);
+    if (downloadsPath != null) return downloadsPath;
 
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/$name');

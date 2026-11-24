@@ -758,7 +758,10 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
       targetUrl = await YouTubeService.getExactVideoUrl(ex.name);
     }
 
-    final opened = await VideoLaunchService.open(targetUrl);
+    final opened = await VideoLaunchService.open(
+      targetUrl,
+      searchQuery: ex.name,
+    );
     if (opened || !mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(

@@ -208,6 +208,37 @@ void main() {
     });
   }
 
+  for (final scope in PlanScope.values) {
+    testWidgets('${scope.name} result returns to its edit form', (
+      tester,
+    ) async {
+      _setTestSize(tester);
+      final plan = _samplePlan(scope);
+      await LocalStore.instance.write(
+        'workout_app.plan_result.v1',
+        plan.toJson(),
+      );
+
+      await tester.pumpWidget(MaterialApp(home: PlanScreen(onBack: () {})));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Go to previous screen'), findsOneWidget);
+      await tester.tap(find.text('Go to previous screen'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(plan.title), findsNothing);
+      expect(find.text('Create another plan'), findsNothing);
+      expect(
+        find.text(
+          scope == PlanScope.week
+              ? 'Generate Plan for a week'
+              : 'Generate Plan for a single day',
+        ),
+        findsOneWidget,
+      );
+    });
+  }
+
   testWidgets('saved plan can be reopened from History', (tester) async {
     _setTestSize(tester);
     final plan = _samplePlan(PlanScope.day);

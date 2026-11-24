@@ -89,11 +89,17 @@ class DietState extends ChangeNotifier {
   DietDay day(DateTime date) =>
       _days.putIfAbsent(keyFor(date), () => const DietDay());
 
-  void setGoals(DateTime date, {int? calorieGoal, int? waterGoalMl}) {
+  void setGoals(
+    DateTime date, {
+    int? calorieGoal,
+    int? waterGoalMl,
+    int? restGoalMinutes,
+  }) {
     final current = day(date);
     _days[keyFor(date)] = DietDay(
       calorieGoal: calorieGoal ?? current.calorieGoal,
       waterGoalMl: waterGoalMl ?? current.waterGoalMl,
+      restGoalMinutes: restGoalMinutes ?? current.restGoalMinutes,
       entries: current.entries,
     );
     unawaited(_persistDays());
@@ -105,6 +111,7 @@ class DietState extends ChangeNotifier {
     _days[keyFor(date)] = DietDay(
       calorieGoal: current.calorieGoal,
       waterGoalMl: current.waterGoalMl,
+      restGoalMinutes: current.restGoalMinutes,
       entries: [...current.entries, entry],
     );
     unawaited(_persistDays());
@@ -116,6 +123,7 @@ class DietState extends ChangeNotifier {
     _days[keyFor(date)] = DietDay(
       calorieGoal: current.calorieGoal,
       waterGoalMl: current.waterGoalMl,
+      restGoalMinutes: current.restGoalMinutes,
       entries: current.entries.where((entry) => entry.id != id).toList(),
     );
     unawaited(_persistDays());
@@ -131,14 +139,21 @@ class DietState extends ChangeNotifier {
     return DietWeekGoals(
       calorieGoal: monday.calorieGoal * 7,
       waterGoalMl: monday.waterGoalMl * 7,
+      restGoalMinutes: monday.restGoalMinutes * 7,
     );
   }
 
-  void setWeekGoals(DateTime date, {int? calorieGoal, int? waterGoalMl}) {
+  void setWeekGoals(
+    DateTime date, {
+    int? calorieGoal,
+    int? waterGoalMl,
+    int? restGoalMinutes,
+  }) {
     final current = weekGoals(date);
     _weekGoals[weekKey(date)] = current.copyWith(
       calorieGoal: calorieGoal,
       waterGoalMl: waterGoalMl,
+      restGoalMinutes: restGoalMinutes,
     );
     unawaited(_persistWeekGoals());
     notifyListeners();
@@ -146,9 +161,7 @@ class DietState extends ChangeNotifier {
 
   /// Totals consumed across the whole week containing [date]. Every saved
   /// daily activity is deducted from the weekly goals.
-  ({int calories, int waterMl, int sleepMinutes}) weekConsumed(
-    DateTime date,
-  ) {
+  ({int calories, int waterMl, int sleepMinutes}) weekConsumed(DateTime date) {
     var calories = 0;
     var waterMl = 0;
     var sleepMinutes = 0;
@@ -159,16 +172,13 @@ class DietState extends ChangeNotifier {
       waterMl += stored.waterConsumedMl;
       sleepMinutes += stored.sleepMinutes;
     }
-    return (
-      calories: calories,
-      waterMl: waterMl,
-      sleepMinutes: sleepMinutes,
-    );
+    return (calories: calories, waterMl: waterMl, sleepMinutes: sleepMinutes);
   }
 
   /// All stored days, oldest first.
   List<({DateTime date, DietDay day})> get daySnapshots {
-    final sorted = _days.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    final sorted = _days.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
     return sorted.map((item) {
       final parts = item.key.split('-');
       final date = DateTime(
@@ -184,8 +194,9 @@ class DietState extends ChangeNotifier {
   /// and its CSV/PDF exports.
   DietSummary buildSummary(DateTime date) {
     final now = DateTime.now();
-    final snapshots =
-        daySnapshots.where((item) => !item.date.isAfter(now)).toList();
+    final snapshots = daySnapshots
+        .where((item) => !item.date.isAfter(now))
+        .toList();
     final days = snapshots
         .map((item) => DietSummaryDay.fromDietDay(item.date, item.day))
         .toList();
@@ -210,6 +221,7 @@ class DietState extends ChangeNotifier {
       scope: 'All activities up to now',
       weekCalorieGoal: goals.calorieGoal,
       weekWaterGoalMl: goals.waterGoalMl,
+      weekRestGoalMinutes: goals.restGoalMinutes,
       days: days,
       entries: entries,
     );

@@ -8,6 +8,7 @@ import '../services/pose_video_source.dart';
 import '../services/pose_analysis_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_dialog.dart';
+import '../widgets/pose_replay_overlay.dart';
 import '../widgets/pose_skeleton_painter.dart';
 
 /// Read-only view of live camera tracking sessions saved on this device.
@@ -329,7 +330,10 @@ class _LiveTrackingHistoryScreenState extends State<LiveTrackingHistoryScreen> {
             '${session.cameraName == null ? '' : '  •  ${session.cameraName}'}',
             style: GoogleFonts.inter(fontSize: 9, color: AppColors.textMuted),
           ),
-          if (session.keypoints.isNotEmpty) ...[
+          // New sessions draw their skeleton on the video itself. Keep this
+          // card only for older sessions that have a last-pose snapshot but no
+          // time-stamped replay frames.
+          if (session.keypoints.isNotEmpty && session.poseFrames.isEmpty) ...[
             const SizedBox(height: 10),
             SizedBox(
               height: 140,
@@ -414,11 +418,28 @@ class _SessionVideoPlayer extends StatefulWidget {
 class _SessionVideoPlayerState extends State<_SessionVideoPlayer> {
   VideoPlayerController? _controller;
   bool _failed = false;
+  int _poseFrameIndex = -1;
+
+  List<PoseReplayFrame> get _poseFrames => widget.session.poseFrames;
 
   @override
   void initState() {
     super.initState();
+    _poseFrameIndex = PoseReplayFrame.indexAt(_poseFrames, Duration.zero);
     _load();
+  }
+
+  /// Rebuilds only when playback crosses into a different recorded sample, so
+  /// a 30 fps video does not repaint the skeleton on every video frame.
+  void _onVideoPositionChanged() {
+    final controller = _controller;
+    if (controller == null || _poseFrames.isEmpty) return;
+    final index = PoseReplayFrame.indexAt(
+      _poseFrames,
+      controller.value.position,
+    );
+    if (index == _poseFrameIndex) return;
+    if (mounted) setState(() => _poseFrameIndex = index);
   }
 
   Future<void> _load() async {
@@ -434,6 +455,8 @@ class _SessionVideoPlayerState extends State<_SessionVideoPlayer> {
       await controller.play();
       if (!mounted) return;
       setState(() => _controller = controller);
+      controller.addListener(_onVideoPositionChanged);
+      _onVideoPositionChanged();
     } catch (e) {
       debugPrint('Could not play saved live video: $e');
       await controller?.dispose();
@@ -443,6 +466,7 @@ class _SessionVideoPlayerState extends State<_SessionVideoPlayer> {
 
   @override
   void dispose() {
+    _controller?.removeListener(_onVideoPositionChanged);
     _controller?.dispose();
     super.dispose();
   }
@@ -476,6 +500,14 @@ class _SessionVideoPlayerState extends State<_SessionVideoPlayer> {
               child: VideoPlayer(controller),
             ),
           ),
+          if (_poseFrames.isNotEmpty)
+            Positioned.fill(
+              child: PoseReplayOverlay(
+                frames: _poseFrames,
+                frameIndex: _poseFrameIndex,
+                unmirrorX: widget.session.landmarksMirroredX,
+              ),
+            ),
           Container(
             color: Colors.black54,
             padding: const EdgeInsets.symmetric(horizontal: 8),

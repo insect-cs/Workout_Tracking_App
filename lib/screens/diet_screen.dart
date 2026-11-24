@@ -35,16 +35,23 @@ class _DietScreenState extends State<DietScreen> {
   final TextEditingController _waterGoalController = TextEditingController(
     text: '$kDefaultDailyWaterGoalMl',
   );
+  final TextEditingController _restGoalController = TextEditingController(
+    text: '$kDefaultDailyRestGoalMinutes',
+  );
   final TextEditingController _weekCalorieGoalController =
       TextEditingController(text: '$kDefaultWeeklyCalorieGoal');
   final TextEditingController _weekWaterGoalController = TextEditingController(
     text: '$kDefaultWeeklyWaterGoalMl',
+  );
+  final TextEditingController _weekRestGoalController = TextEditingController(
+    text: '$kDefaultWeeklyRestGoalMinutes',
   );
 
   late DateTime _selectedDate;
   int? _selectedHour;
   DietActivityType _activityType = DietActivityType.food;
   String _foodType = 'Veg';
+  String _quantityUnit = kFoodQuantityUnits.first;
   XFile? _photo;
   FoodAnalysis? _analysis;
   bool _isAnalysing = false;
@@ -92,8 +99,10 @@ class _DietScreenState extends State<DietScreen> {
     _sleepMinutesController.dispose();
     _calorieGoalController.dispose();
     _waterGoalController.dispose();
+    _restGoalController.dispose();
     _weekCalorieGoalController.dispose();
     _weekWaterGoalController.dispose();
+    _weekRestGoalController.dispose();
     super.dispose();
   }
 
@@ -101,9 +110,11 @@ class _DietScreenState extends State<DietScreen> {
     final day = _store.day(_selectedDate);
     _calorieGoalController.text = '${day.calorieGoal}';
     _waterGoalController.text = '${day.waterGoalMl}';
+    _restGoalController.text = '${day.restGoalMinutes}';
     final week = _store.weekGoals(_selectedDate);
     _weekCalorieGoalController.text = '${week.calorieGoal}';
     _weekWaterGoalController.text = '${week.waterGoalMl}';
+    _weekRestGoalController.text = '${week.restGoalMinutes}';
   }
 
   String get _formattedDate =>
@@ -116,6 +127,14 @@ class _DietScreenState extends State<DietScreen> {
     final mins = minutes % 60;
     if (hours == 0) return '${mins}m';
     return mins == 0 ? '${hours}h' : '${hours}h ${mins}m';
+  }
+
+  /// Keeps free-form quantities working (e.g. "1 bowl") while attaching the
+  /// selected unit to plain numeric amounts (e.g. "250" + "g" -> "250 g").
+  String _composeQuantity(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || double.tryParse(trimmed) == null) return trimmed;
+    return '$trimmed $_quantityUnit';
   }
 
   Future<void> _pickDate() async {
@@ -149,6 +168,7 @@ class _DietScreenState extends State<DietScreen> {
     _sleepHoursController.clear();
     _sleepMinutesController.clear();
     _foodType = _foodTypes.first;
+    _quantityUnit = kFoodQuantityUnits.first;
     _photo = null;
     _analysis = null;
     _isAnalysing = false;
@@ -158,16 +178,20 @@ class _DietScreenState extends State<DietScreen> {
   bool _updateGoals() {
     final calorieGoal = int.tryParse(_calorieGoalController.text.trim());
     final waterGoal = int.tryParse(_waterGoalController.text.trim());
+    final restGoal = int.tryParse(_restGoalController.text.trim());
     if (calorieGoal == null ||
         calorieGoal <= 0 ||
         waterGoal == null ||
-        waterGoal <= 0) {
+        waterGoal <= 0 ||
+        restGoal == null ||
+        restGoal <= 0) {
       return false;
     }
     _store.setGoals(
       _selectedDate,
       calorieGoal: calorieGoal,
       waterGoalMl: waterGoal,
+      restGoalMinutes: restGoal,
     );
     return true;
   }
@@ -175,16 +199,20 @@ class _DietScreenState extends State<DietScreen> {
   bool _updateWeekGoals() {
     final calorieGoal = int.tryParse(_weekCalorieGoalController.text.trim());
     final waterGoal = int.tryParse(_weekWaterGoalController.text.trim());
+    final restGoal = int.tryParse(_weekRestGoalController.text.trim());
     if (calorieGoal == null ||
         calorieGoal <= 0 ||
         waterGoal == null ||
-        waterGoal <= 0) {
+        waterGoal <= 0 ||
+        restGoal == null ||
+        restGoal <= 0) {
       return false;
     }
     _store.setWeekGoals(
       _selectedDate,
       calorieGoal: calorieGoal,
       waterGoalMl: waterGoal,
+      restGoalMinutes: restGoal,
     );
     return true;
   }
@@ -194,9 +222,11 @@ class _DietScreenState extends State<DietScreen> {
       if (weekly) {
         _weekCalorieGoalController.text = '$kDefaultWeeklyCalorieGoal';
         _weekWaterGoalController.text = '$kDefaultWeeklyWaterGoalMl';
+        _weekRestGoalController.text = '$kDefaultWeeklyRestGoalMinutes';
       } else {
         _calorieGoalController.text = '$kDefaultDailyCalorieGoal';
         _waterGoalController.text = '$kDefaultDailyWaterGoalMl';
+        _restGoalController.text = '$kDefaultDailyRestGoalMinutes';
       }
     });
   }
@@ -216,7 +246,7 @@ class _DietScreenState extends State<DietScreen> {
   Future<void> _validateFood() async {
     if (_isAnalysing) return;
     final item = _foodItemController.text.trim();
-    final quantity = _quantityController.text.trim();
+    final quantity = _composeQuantity(_quantityController.text);
     if (item.isEmpty || quantity.isEmpty) {
       setState(() => _error = 'Enter a food item and quantity first.');
       return;
@@ -269,6 +299,7 @@ class _DietScreenState extends State<DietScreen> {
         label: analysis.foodItem,
         detail: '${analysis.foodType} • ${analysis.quantity}',
         calories: analysis.calories,
+        quantityUnit: _quantityUnit,
         photoName: _photo?.name,
         analysis: analysis,
         createdAt: DateTime.now(),
@@ -341,7 +372,8 @@ class _DietScreenState extends State<DietScreen> {
                         _sectionLabel('TIME SLOTS'),
                         const SizedBox(height: 4),
                         Text(
-                          'Tap a one-hour slot to add Food, Water or Rest (sleep).',
+                          'Tap a one-hour slot to add Food, Water or Rest '
+                          '(sleep). Green = filled, red = idle.',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             color: AppColors.textSlate,
@@ -584,42 +616,33 @@ class _DietScreenState extends State<DietScreen> {
 
   Widget _slotTile(int hour, int entryCount) {
     final isSelected = _selectedHour == hour;
-    return InkWell(
-      onTap: () => _selectHour(hour),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primaryOrange : AppColors.cardSurface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? AppColors.primaryOrange : AppColors.border,
+    // A slot turns green as soon as it has an activity and goes back to red
+    // when its last activity is removed.
+    final isFilled = entryCount > 0;
+    final label = '${hour.toString().padLeft(2, '0')}:00';
+    return Semantics(
+      label: isFilled ? 'Filled slot $label' : 'Empty slot $label',
+      child: InkWell(
+        onTap: () => _selectHour(hour),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isFilled ? AppColors.emerald : AppColors.rose,
+            borderRadius: BorderRadius.circular(12),
+            border: isSelected
+                ? Border.all(color: AppColors.primaryOrange, width: 2)
+                : null,
           ),
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Text(
-              '${hour.toString().padLeft(2, '0')}:00',
+          child: Center(
+            child: Text(
+              label,
               style: GoogleFonts.spaceGrotesk(
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
-                color: isSelected ? AppColors.onPrimary : AppColors.textWhite,
+                color: Colors.white,
               ),
             ),
-            if (entryCount > 0)
-              Positioned(
-                right: 5,
-                top: 5,
-                child: Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppColors.onPrimary : AppColors.emerald,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
@@ -643,7 +666,8 @@ class _DietScreenState extends State<DietScreen> {
           const SizedBox(height: 6),
           _buildDefaultHint(
             'Default: $kDefaultDailyCalorieGoal kcal  •  '
-            '$kDefaultDailyWaterGoalMl ml',
+            '$kDefaultDailyWaterGoalMl ml  •  '
+            '${_formatSleep(kDefaultDailyRestGoalMinutes)} rest',
             isDefault: day.isUsingDefaultGoals,
             onRestore: () => _restoreDefaultGoals(weekly: false),
           ),
@@ -663,6 +687,8 @@ class _DietScreenState extends State<DietScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          _goalField('REST GOAL', _restGoalController, 'min'),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerRight,
@@ -674,7 +700,7 @@ class _DietScreenState extends State<DietScreen> {
                     content: Text(
                       saved
                           ? 'Daily goals updated'
-                          : 'Enter positive numbers for both goals',
+                          : 'Enter positive numbers for all goals',
                     ),
                     behavior: SnackBarBehavior.floating,
                   ),
@@ -705,6 +731,15 @@ class _DietScreenState extends State<DietScreen> {
             used: day.waterConsumedMl,
             goal: day.waterGoalMl,
           ),
+          const SizedBox(height: 10),
+          _goalProgress(
+            icon: Icons.bedtime_outlined,
+            label: 'Rest left',
+            value: day.sleepRemainingMinutes,
+            displayValue: _formatSleep(day.sleepRemainingMinutes),
+            used: day.sleepMinutes,
+            goal: day.restGoalMinutes,
+          ),
         ],
       ),
     );
@@ -731,7 +766,8 @@ class _DietScreenState extends State<DietScreen> {
           const SizedBox(height: 6),
           _buildDefaultHint(
             'Default: $kDefaultWeeklyCalorieGoal kcal  •  '
-            '$kDefaultWeeklyWaterGoalMl ml (7 days)',
+            '$kDefaultWeeklyWaterGoalMl ml  •  '
+            '${_formatSleep(kDefaultWeeklyRestGoalMinutes)} rest (7 days)',
             isDefault: week.isUsingDefaultGoals,
             onRestore: () => _restoreDefaultGoals(weekly: true),
           ),
@@ -755,6 +791,8 @@ class _DietScreenState extends State<DietScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          _goalField('WEEK REST GOAL', _weekRestGoalController, 'min'),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerRight,
@@ -766,8 +804,7 @@ class _DietScreenState extends State<DietScreen> {
                     content: Text(
                       saved
                           ? 'Weekly goals updated'
-                          : 'Enter positive numbers for both goals',
-
+                          : 'Enter positive numbers for all goals',
                     ),
                     behavior: SnackBarBehavior.floating,
                   ),
@@ -797,6 +834,17 @@ class _DietScreenState extends State<DietScreen> {
             unit: 'ml',
             used: consumed.waterMl,
             goal: week.waterGoalMl,
+          ),
+          const SizedBox(height: 10),
+          _goalProgress(
+            icon: Icons.bedtime_outlined,
+            label: 'Rest left this week',
+            value: week.restGoalMinutes - consumed.sleepMinutes,
+            displayValue: _formatSleep(
+              week.restGoalMinutes - consumed.sleepMinutes,
+            ),
+            used: consumed.sleepMinutes,
+            goal: week.restGoalMinutes,
           ),
           const SizedBox(height: 10),
           Text(
@@ -1084,7 +1132,9 @@ class _DietScreenState extends State<DietScreen> {
                     icon: const Icon(Icons.table_view, size: 16),
                     label: Text(
                       'Export as CSV',
-                      style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                      style: GoogleFonts.spaceGrotesk(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -1096,7 +1146,9 @@ class _DietScreenState extends State<DietScreen> {
                     icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
                     label: Text(
                       'Export as PDF',
-                      style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                      style: GoogleFonts.spaceGrotesk(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -1168,7 +1220,9 @@ class _DietScreenState extends State<DietScreen> {
       child: Row(
         children: [
           Icon(
-            day.isGoalHalfMet ? Icons.check_circle : Icons.radio_button_unchecked,
+            day.isGoalHalfMet
+                ? Icons.check_circle
+                : Icons.radio_button_unchecked,
             size: 15,
             color: day.isGoalHalfMet ? AppColors.emerald : AppColors.rose,
           ),
@@ -1203,9 +1257,9 @@ class _DietScreenState extends State<DietScreen> {
   ) async {
     Navigator.of(sheetContext).pop();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Generating diet summary…')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Generating diet summary…')));
     try {
       final path = format == 'csv'
           ? await DietExportService.saveCsv(summary)
@@ -1222,9 +1276,8 @@ class _DietScreenState extends State<DietScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Export failed: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Export failed: $e')));
     }
   }
 
@@ -1275,7 +1328,8 @@ class _DietScreenState extends State<DietScreen> {
     required IconData icon,
     required String label,
     required int value,
-    required String unit,
+    String? displayValue,
+    String? unit,
     required int used,
     required int goal,
   }) {
@@ -1301,7 +1355,7 @@ class _DietScreenState extends State<DietScreen> {
             ),
             const SizedBox(width: 6),
             Text(
-              '$value $unit',
+              displayValue ?? (unit == null ? '$value' : '$value $unit'),
               style: GoogleFonts.spaceGrotesk(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -1434,6 +1488,21 @@ class _DietScreenState extends State<DietScreen> {
           controller: _quantityController,
           hint: 'e.g., 1 bowl (250 g)',
           icon: Icons.scale_outlined,
+          suffixText: _quantityUnit,
+        ),
+        const SizedBox(height: 10),
+        _sectionLabel('UNIT'),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          initialValue: _quantityUnit,
+          isExpanded: true,
+          items: [
+            for (final unit in kFoodQuantityUnits)
+              DropdownMenuItem(value: unit, child: Text(unit)),
+          ],
+          onChanged: (value) {
+            if (value != null) setState(() => _quantityUnit = value);
+          },
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
@@ -1577,6 +1646,7 @@ class _DietScreenState extends State<DietScreen> {
     required String hint,
     required IconData icon,
     bool numeric = false,
+    String? suffixText,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1590,6 +1660,10 @@ class _DietScreenState extends State<DietScreen> {
           decoration: InputDecoration(
             hintText: hint,
             prefixIcon: Icon(icon, size: 17),
+            suffixText: suffixText,
+            suffixStyle: suffixText == null
+                ? null
+                : GoogleFonts.inter(fontSize: 11, color: AppColors.textSlate),
           ),
         ),
       ],
@@ -1722,8 +1796,8 @@ class _DietScreenState extends State<DietScreen> {
             entry.type == DietActivityType.food
                 ? Icons.restaurant_menu
                 : entry.type == DietActivityType.water
-                    ? Icons.water_drop_outlined
-                    : Icons.bedtime_outlined,
+                ? Icons.water_drop_outlined
+                : Icons.bedtime_outlined,
             size: 15,
             color: AppColors.primaryOrange,
           ),
@@ -1754,8 +1828,8 @@ class _DietScreenState extends State<DietScreen> {
             entry.type == DietActivityType.food
                 ? '${entry.calories} kcal'
                 : entry.type == DietActivityType.water
-                    ? '${entry.waterMl} ml'
-                    : _formatSleep(entry.sleepMinutes),
+                ? '${entry.waterMl} ml'
+                : _formatSleep(entry.sleepMinutes),
             style: GoogleFonts.spaceGrotesk(
               fontSize: 11,
               fontWeight: FontWeight.bold,

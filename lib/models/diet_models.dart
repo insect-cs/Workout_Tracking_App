@@ -5,8 +5,15 @@ const int kDefaultDailyCalorieGoal = 2000;
 const int kDefaultDailyWaterGoalMl = 2500;
 
 /// Default weekly targets = 7 days of the default daily targets.
+/// Default daily rest (sleep) target: 8 hours, stored in minutes.
+const int kDefaultDailyRestGoalMinutes = 8 * 60;
+
 const int kDefaultWeeklyCalorieGoal = kDefaultDailyCalorieGoal * 7;
 const int kDefaultWeeklyWaterGoalMl = kDefaultDailyWaterGoalMl * 7;
+const int kDefaultWeeklyRestGoalMinutes = kDefaultDailyRestGoalMinutes * 7;
+
+/// Units offered when a food quantity is entered in an activity slot.
+const List<String> kFoodQuantityUnits = ['g', 'mg', 'ml', 'pcs'];
 
 class FoodNutrient {
   const FoodNutrient({required this.name, required this.amount});
@@ -81,6 +88,7 @@ class DietEntry {
     this.calories = 0,
     this.waterMl = 0,
     this.sleepMinutes = 0,
+    this.quantityUnit,
     this.photoName,
     this.analysis,
     required this.createdAt,
@@ -93,8 +101,12 @@ class DietEntry {
   final String detail;
   final int calories;
   final int waterMl;
+
   /// Sleep tracked by a `rest` activity, in minutes.
   final int sleepMinutes;
+
+  /// Unit selected for a food quantity: g, mg, ml or pcs.
+  final String? quantityUnit;
   final String? photoName;
   final FoodAnalysis? analysis;
   final DateTime createdAt;
@@ -108,6 +120,7 @@ class DietEntry {
     'calories': calories,
     'waterMl': waterMl,
     'sleepMinutes': sleepMinutes,
+    if (quantityUnit != null) 'quantityUnit': quantityUnit,
     if (photoName != null) 'photoName': photoName,
     if (analysis != null) 'analysis': analysis!.toJson(),
     'createdAt': createdAt.toIso8601String(),
@@ -125,6 +138,7 @@ class DietEntry {
     calories: (json['calories'] as num?)?.toInt() ?? 0,
     waterMl: (json['waterMl'] as num?)?.toInt() ?? 0,
     sleepMinutes: (json['sleepMinutes'] as num?)?.toInt() ?? 0,
+    quantityUnit: json['quantityUnit'] as String?,
     photoName: json['photoName'] as String?,
     analysis: (json['analysis'] as Map<String, dynamic>?) == null
         ? null
@@ -140,11 +154,15 @@ class DietDay {
   const DietDay({
     this.calorieGoal = kDefaultDailyCalorieGoal,
     this.waterGoalMl = kDefaultDailyWaterGoalMl,
+    this.restGoalMinutes = kDefaultDailyRestGoalMinutes,
     this.entries = const [],
   });
 
   final int calorieGoal;
   final int waterGoalMl;
+
+  /// Daily sleep/rest target in minutes. Editable alongside the other goals.
+  final int restGoalMinutes;
   final List<DietEntry> entries;
 
   int get caloriesConsumed =>
@@ -160,6 +178,8 @@ class DietDay {
 
   int get waterRemainingMl => waterGoalMl - waterConsumedMl;
 
+  int get sleepRemainingMinutes => restGoalMinutes - sleepMinutes;
+
   /// 0-1 fraction of the calorie goal reached today.
   double get calorieProgress => calorieGoal > 0
       ? (caloriesConsumed / calorieGoal).clamp(0.0, 1.0).toDouble()
@@ -170,13 +190,18 @@ class DietDay {
       ? (waterConsumedMl / waterGoalMl).clamp(0.0, 1.0).toDouble()
       : 0;
 
-  /// A day is "on track" (green) once either goal reaches at least 50%.
+  double get restProgress => restGoalMinutes > 0
+      ? (sleepMinutes / restGoalMinutes).clamp(0.0, 1.0).toDouble()
+      : 0;
+
+  /// A day is "on track" (green) once any goal reaches at least 50%.
   bool get isGoalHalfMet =>
-      calorieProgress >= 0.5 || waterProgress >= 0.5;
+      calorieProgress >= 0.5 || waterProgress >= 0.5 || restProgress >= 0.5;
 
   bool get isUsingDefaultGoals =>
       calorieGoal == kDefaultDailyCalorieGoal &&
-      waterGoalMl == kDefaultDailyWaterGoalMl;
+      waterGoalMl == kDefaultDailyWaterGoalMl &&
+      restGoalMinutes == kDefaultDailyRestGoalMinutes;
 
   List<DietEntry> entriesForSlot(int hour) =>
       entries.where((entry) => entry.slotHour == hour).toList();
@@ -184,6 +209,7 @@ class DietDay {
   Map<String, dynamic> toJson() => {
     'calorieGoal': calorieGoal,
     'waterGoalMl': waterGoalMl,
+    'restGoalMinutes': restGoalMinutes,
     'entries': entries.map((entry) => entry.toJson()).toList(),
   };
 
@@ -192,6 +218,9 @@ class DietDay {
         (json['calorieGoal'] as num?)?.toInt() ?? kDefaultDailyCalorieGoal,
     waterGoalMl:
         (json['waterGoalMl'] as num?)?.toInt() ?? kDefaultDailyWaterGoalMl,
+    restGoalMinutes:
+        (json['restGoalMinutes'] as num?)?.toInt() ??
+        kDefaultDailyRestGoalMinutes,
     entries:
         (json['entries'] as List<dynamic>?)
             ?.whereType<Map<String, dynamic>>()
@@ -213,24 +242,34 @@ class DietWeekGoals {
   const DietWeekGoals({
     this.calorieGoal = kDefaultWeeklyCalorieGoal,
     this.waterGoalMl = kDefaultWeeklyWaterGoalMl,
+    this.restGoalMinutes = kDefaultWeeklyRestGoalMinutes,
   });
 
   final int calorieGoal;
   final int waterGoalMl;
 
+  /// Weekly sleep/rest target in minutes. Editable with the other goals.
+  final int restGoalMinutes;
+
   bool get isUsingDefaultGoals =>
       calorieGoal == kDefaultWeeklyCalorieGoal &&
-      waterGoalMl == kDefaultWeeklyWaterGoalMl;
+      waterGoalMl == kDefaultWeeklyWaterGoalMl &&
+      restGoalMinutes == kDefaultWeeklyRestGoalMinutes;
 
-  DietWeekGoals copyWith({int? calorieGoal, int? waterGoalMl}) =>
-      DietWeekGoals(
-        calorieGoal: calorieGoal ?? this.calorieGoal,
-        waterGoalMl: waterGoalMl ?? this.waterGoalMl,
-      );
+  DietWeekGoals copyWith({
+    int? calorieGoal,
+    int? waterGoalMl,
+    int? restGoalMinutes,
+  }) => DietWeekGoals(
+    calorieGoal: calorieGoal ?? this.calorieGoal,
+    waterGoalMl: waterGoalMl ?? this.waterGoalMl,
+    restGoalMinutes: restGoalMinutes ?? this.restGoalMinutes,
+  );
 
   Map<String, dynamic> toJson() => {
     'calorieGoal': calorieGoal,
     'waterGoalMl': waterGoalMl,
+    'restGoalMinutes': restGoalMinutes,
   };
 
   factory DietWeekGoals.fromJson(Map<String, dynamic> json) => DietWeekGoals(
@@ -238,6 +277,9 @@ class DietWeekGoals {
         (json['calorieGoal'] as num?)?.toInt() ?? kDefaultWeeklyCalorieGoal,
     waterGoalMl:
         (json['waterGoalMl'] as num?)?.toInt() ?? kDefaultWeeklyWaterGoalMl,
+    restGoalMinutes:
+        (json['restGoalMinutes'] as num?)?.toInt() ??
+        kDefaultWeeklyRestGoalMinutes,
   );
 }
 
@@ -247,6 +289,7 @@ class DietSummaryDay {
     required this.date,
     required this.calorieGoal,
     required this.waterGoalMl,
+    this.restGoalMinutes = kDefaultDailyRestGoalMinutes,
     required this.caloriesConsumed,
     required this.waterConsumedMl,
     required this.sleepMinutes,
@@ -258,6 +301,7 @@ class DietSummaryDay {
         date: date,
         calorieGoal: day.calorieGoal,
         waterGoalMl: day.waterGoalMl,
+        restGoalMinutes: day.restGoalMinutes,
         caloriesConsumed: day.caloriesConsumed,
         waterConsumedMl: day.waterConsumedMl,
         sleepMinutes: day.sleepMinutes,
@@ -267,6 +311,7 @@ class DietSummaryDay {
   final DateTime date;
   final int calorieGoal;
   final int waterGoalMl;
+  final int restGoalMinutes;
   final int caloriesConsumed;
   final int waterConsumedMl;
   final int sleepMinutes;
@@ -274,7 +319,8 @@ class DietSummaryDay {
 
   bool get isGoalHalfMet =>
       (calorieGoal > 0 && caloriesConsumed >= calorieGoal / 2) ||
-      (waterGoalMl > 0 && waterConsumedMl >= waterGoalMl / 2);
+      (waterGoalMl > 0 && waterConsumedMl >= waterGoalMl / 2) ||
+      (restGoalMinutes > 0 && sleepMinutes >= restGoalMinutes / 2);
 }
 
 /// One saved activity as it appears in the diet summary/export.
@@ -292,6 +338,7 @@ class DietSummary {
     required this.scope,
     required this.weekCalorieGoal,
     required this.weekWaterGoalMl,
+    this.weekRestGoalMinutes = kDefaultWeeklyRestGoalMinutes,
     required this.days,
     required this.entries,
   });
@@ -300,13 +347,13 @@ class DietSummary {
   final String scope;
   final int weekCalorieGoal;
   final int weekWaterGoalMl;
+  final int weekRestGoalMinutes;
   final List<DietSummaryDay> days;
   final List<DietSummaryEntry> entries;
 
   int get totalCalories =>
       days.fold(0, (sum, day) => sum + day.caloriesConsumed);
-  int get totalWaterMl =>
-      days.fold(0, (sum, day) => sum + day.waterConsumedMl);
+  int get totalWaterMl => days.fold(0, (sum, day) => sum + day.waterConsumedMl);
   int get totalSleepMinutes =>
       days.fold(0, (sum, day) => sum + day.sleepMinutes);
   int get totalActivities =>

@@ -16,28 +16,11 @@ import '../widgets/app_dialog.dart';
 
 /// Extracts the 11-character video id from a YouTube watch/embed/shorts URL.
 /// Returns null for search URLs or anything that is not a direct video link.
-String? youtubeVideoIdFromUrl(String url) {
-  final uri = Uri.tryParse(url);
-  if (uri == null) return null;
-
-  final host = uri.host.toLowerCase();
-  if (host == 'youtu.be') {
-    final id = uri.pathSegments.isEmpty ? '' : uri.pathSegments.first;
-    return id.length == 11 ? id : null;
-  }
-  if (!host.contains('youtube.com')) return null;
-
-  final queryId = uri.queryParameters['v'];
-  if (queryId != null && queryId.length == 11) return queryId;
-
-  final segments = uri.pathSegments;
-  if (segments.length >= 2 &&
-      (segments.first == 'embed' || segments.first == 'shorts') &&
-      segments[1].length == 11) {
-    return segments[1];
-  }
-  return null;
-}
+///
+/// Delegates to [VideoLaunchService] so thumbnails and launches use the same
+/// case-sensitive parser.
+String? youtubeVideoIdFromUrl(String url) =>
+    VideoLaunchService.youTubeVideoId(url);
 
 /// State for one of the two Plan forms (Weekly / Single day). Keeping the two
 /// instances separate means switching tabs never loses the user's selections.
@@ -269,6 +252,16 @@ class _PlanScreenState extends State<PlanScreen>
   void _openHistoryFromResult() {
     _clearPlan();
     _tabController.animateTo(2);
+  }
+
+  /// Leaves the generated-result view and returns to the form that produced it.
+  /// Using the plan scope (rather than the currently selected tab) also handles
+  /// results reopened from History, where the tab controller is on tab 2.
+  void _returnToEditScreen(bool isWeekly) {
+    final tabIndex = isWeekly ? 0 : 1;
+    _formTabIndex = tabIndex;
+    _clearPlan();
+    _tabController.animateTo(tabIndex);
   }
 
   void _openSavedPlan(SavedPlanEntry entry) {
@@ -1319,6 +1312,19 @@ class _PlanScreenState extends State<PlanScreen>
             ),
           ),
         ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: () => _returnToEditScreen(plan.isWeekly),
+            icon: const Icon(Icons.arrow_back),
+            label: Text(
+              'Go to previous screen',
+              style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1584,7 +1590,10 @@ class _PlanScreenState extends State<PlanScreen>
     if (url.isEmpty || url.contains('search_query')) {
       url = await YouTubeService.getExactVideoUrl(exercise.name);
     }
-    final opened = await VideoLaunchService.open(url);
+    final opened = await VideoLaunchService.open(
+      url,
+      searchQuery: exercise.name,
+    );
     if (!opened && mounted) _showVideoError();
   }
 

@@ -154,7 +154,7 @@ void main() {
   testWidgets('food validation asks for an API key before calling Gemini', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(1200, 3000);
+    tester.view.physicalSize = const Size(1200, 4200);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -278,6 +278,53 @@ void main() {
     expect(csv, contains('450'));
   });
 
+  test('rest goals are editable and persist in daily and weekly state', () {
+    final day = DietDay(restGoalMinutes: 420);
+    expect(DietDay.fromJson(day.toJson()).restGoalMinutes, 420);
+    expect(
+      DietWeekGoals.fromJson(DietWeekGoals(restGoalMinutes: 2940).toJson())
+          .restGoalMinutes,
+      2940,
+    );
+
+    final store = DietState.instance;
+    final monday = DateTime(2026, 1, 5);
+    store.setGoals(monday, restGoalMinutes: 420);
+    store.addEntry(
+      monday,
+      DietEntry(
+        id: 'r1',
+        slotHour: 22,
+        type: DietActivityType.rest,
+        label: 'Rest',
+        detail: '7h',
+        sleepMinutes: 420,
+        createdAt: monday,
+      ),
+    );
+    expect(store.day(monday).restGoalMinutes, 420);
+    expect(store.day(monday).sleepRemainingMinutes, 0);
+    expect(store.day(monday).restProgress, 1);
+
+    store.setWeekGoals(monday, restGoalMinutes: 2940);
+    expect(store.weekGoals(monday).restGoalMinutes, 2940);
+    expect(store.buildSummary(monday).weekRestGoalMinutes, 2940);
+  });
+
+  test('food quantity units are stored and offered in the slot editor', () {
+    expect(kFoodQuantityUnits, ['g', 'mg', 'ml', 'pcs']);
+    final entry = DietEntry(
+      id: 'f1',
+      slotHour: 9,
+      type: DietActivityType.food,
+      label: 'Oats',
+      detail: 'Veg • 50 g',
+      quantityUnit: 'mg',
+      createdAt: DateTime(2026, 1, 5),
+    );
+    expect(DietEntry.fromJson(entry.toJson()).quantityUnit, 'mg');
+  });
+
   testWidgets('diet screen exposes weekly goals, summary and rest activity', (
     tester,
   ) async {
@@ -303,6 +350,29 @@ void main() {
 
     await tester.tap(find.text('23:00'));
     await tester.pumpAndSettle();
+
+    // Idle slots are marked red via semantics; the food editor offers all
+    // four quantity units.
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.label == 'Empty slot 23:00',
+      ),
+      findsOneWidget,
+    );
+    final unitDropdown = find
+        .byType(DropdownButton<String>)
+        .evaluate()
+        .map((element) => element.widget as DropdownButton<String>)
+        .firstWhere(
+          (widget) => widget.items?.any((item) => item.value == 'pcs') ?? false,
+        );
+    expect(
+      unitDropdown.items!.map((item) => item.value).toList(),
+      kFoodQuantityUnits,
+    );
+
     await tester.tap(find.text('Rest'));
     await tester.pumpAndSettle();
 
@@ -328,5 +398,13 @@ void main() {
     final day = DietState.instance.day(today);
     expect(day.sleepMinutes, 450);
     expect(day.entriesForSlot(23).single.type, DietActivityType.rest);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.label == 'Filled slot 23:00',
+      ),
+      findsOneWidget,
+    );
   });
 }

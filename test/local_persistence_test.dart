@@ -229,6 +229,14 @@ void main() {
   test(
     'live tracking history survives a round trip and is session scoped',
     () async {
+      final replayFrame = PoseReplayFrame.fromSnapshots(400, const [
+        PoseKeypointSnapshot(
+          name: 'left_knee',
+          x: 0.4,
+          y: 0.7,
+          confidence: 0.9,
+        ),
+      ])!;
       final session = LiveTrackingSession(
         id: 'live-1',
         startedAt: DateTime(2026, 11, 23, 9),
@@ -256,6 +264,8 @@ void main() {
             confidence: 0.9,
           ),
         ],
+        poseFrames: [replayFrame],
+        landmarksMirroredX: true,
       );
 
       await LiveTrackingHistoryStore.save(session);
@@ -265,6 +275,14 @@ void main() {
       expect(restored.repCount, 12);
       expect(restored.formattedDuration, '1m');
       expect(restored.keypoints.single.name, 'left_knee');
+      expect(restored.poseFrames, hasLength(1));
+      expect(restored.poseFrames.single.tMs, 400);
+      expect(restored.landmarksMirroredX, isTrue);
+      final replayKnee = restored.poseFrames.single
+          .toPoseKeypoints(unmirrorX: restored.landmarksMirroredX)
+          .single;
+      expect(replayKnee.name, 'left_knee');
+      expect(replayKnee.x, closeTo(0.6, 0.002));
       expect(restored.hasVideo, isTrue);
       expect(restored.videoPath, '/tmp/live.webm');
       expect(restored.videoBase64, 'ZmFrZSB2aWRlbyBieXRlcw==');

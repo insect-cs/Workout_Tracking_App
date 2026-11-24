@@ -57,6 +57,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   // Live camera squat tracking
   CameraController? _cameraController;
   List<CameraDescription> _availableCameras = const [];
+  CameraDescription? _activeCameraDescription;
   String? _activeCameraName;
   bool _mirrorLiveCamera = false;
   bool _isLiveTracking = false;
@@ -65,11 +66,15 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   bool _hasSavedSession = false;
   bool _isProcessingFrame = false;
   bool _isStreamingLiveFrames = false;
+  String? _liveDetectionStatus;
 
   // Recorded camera video for the current (or just-stopped) session.
   String? _recordedVideoPath;
   String? _recordedVideoBase64;
   String? _recordedVideoMimeType;
+  DateTime? _videoRecordingStartedAt;
+  DateTime? _lastPoseFrameRecordedAt;
+  List<PoseReplayFrame> _livePoseFrames = <PoseReplayFrame>[];
   List<PoseKeypoint> _liveKeypoints = const [];
   int _squatCount = 0;
   bool _inSquatDepth = false;
@@ -92,6 +97,11 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   bool _isProcessingVideoFrame = false;
   String? _videoTrackStatus;
   bool _videoEnded = false;
+
+  // Replay landmarks are sampled at 5 fps and capped so a long session cannot
+  // bloat the encrypted history JSON (3600 samples = 12 minutes at 5 fps).
+  static const Duration _poseReplayFrameInterval = Duration(milliseconds: 200);
+  static const int _maxPoseReplayFrames = 3600;
 
   // Preset demo workouts for testing
   static const _demoExercises = [
@@ -242,6 +252,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   void _stopLiveTracking() {
     final controller = _cameraController;
     _cameraController = null;
+    _activeCameraDescription = null;
     _isLiveTracking = false;
     _isProcessingFrame = false;
     if (controller != null) unawaited(_releaseCamera(controller));
@@ -291,7 +302,51 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       }
     } catch (e) {
       debugPrint('Could not save live tracking video: $e');
+    } finally {
+      _videoRecordingStartedAt = null;
     }
+  }
+
+  List<PoseKeypointSnapshot> _keypointSnapshots(List<PoseKeypoint> keypoints) {
+    return keypoints
+        .map(
+          (point) => PoseKeypointSnapshot(
+            name: point.name,
+            x: point.x,
+            y: point.y,
+            confidence: point.confidence,
+          ),
+        )
+        .toList();
+  }
+
+  /// Stores a compact skeleton sample timed against the replay video. Frames
+  /// are throttled to 5 fps and skipped when only recording is available.
+  void _recordPoseFrame(List<PoseKeypoint> keypoints) {
+    final recordingStartedAt = _videoRecordingStartedAt;
+    if (recordingStartedAt == null ||
+        keypoints.isEmpty ||
+        _livePoseFrames.length >= _maxPoseReplayFrames) {
+      return;
+    }
+
+    final now = DateTime.now();
+    final last = _lastPoseFrameRecordedAt;
+    if (last != null && now.difference(last) < _poseReplayFrameInterval) {
+      return;
+    }
+
+    final tMs = now.difference(recordingStartedAt).inMilliseconds;
+    if (tMs < 0) return;
+
+    final frame = PoseReplayFrame.fromSnapshots(
+      tMs,
+      _keypointSnapshots(keypoints),
+    );
+    if (frame == null) return;
+
+    _lastPoseFrameRecordedAt = now;
+    _livePoseFrames.add(frame);
   }
 
   /// Snapshots the current live session into device-local history. The explicit
@@ -302,13 +357,17 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     if (_hasSavedSession || startedAt == null) return false;
 
     final noTracking =
-        allowVideoOnly && _identifiedRepCount == 0 && _liveKeypoints.isEmpty;
+        allowVideoOnly &&
+        _identifiedRepCount == 0 &&
+        _liveKeypoints.isEmpty &&
+        _livePoseFrames.isEmpty;
 
     // Ignore empty sessions unless they carry a recorded video.
     if (!noTracking &&
         _identifiedRepCount == 0 &&
         _liveExerciseName == 'Identifying exercise...' &&
-        !_hasRecordedVideo) {
+        !_hasRecordedVideo &&
+        _livePoseFrames.isEmpty) {
       return false;
     }
 
@@ -330,19 +389,12 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
           : _liveFeedback,
       engine: kIsWeb ? 'MoveNet (TF.js)' : 'ML Kit',
       cameraName: _activeCameraName,
-      keypoints: _liveKeypoints
-          .map(
-            (point) => PoseKeypointSnapshot(
-              name: point.name,
-              x: point.x,
-              y: point.y,
-              confidence: point.confidence,
-            ),
-          )
-          .toList(),
+      keypoints: _keypointSnapshots(_liveKeypoints),
       videoPath: _recordedVideoPath,
       videoBase64: _recordedVideoBase64,
       videoMimeType: _recordedVideoMimeType,
+      poseFrames: List<PoseReplayFrame>.from(_livePoseFrames),
+      landmarksMirroredX: _mirrorLiveCamera,
     );
     _sessionStartedAt = null;
     _hasSavedSession = true;
@@ -388,6 +440,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
   /// Resets all live tracking counters and exercise identification state.
   void _resetLiveTrackingState() {
+    PoseAnalysisService.resetLiveTracking();
     _squatCount = 0;
     _inSquatDepth = false;
     _kneeAngleHistory.clear();
@@ -402,6 +455,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     _armCurled = false;
     _sessionStartedAt = null;
     _hasSavedSession = false;
+    _liveDetectionStatus = null;
   }
 
   Future<void> _pickImage() async {
@@ -666,28 +720,24 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       if (!kIsWeb) {
         await controller.setFlashMode(FlashMode.off);
       }
-      await controller.startImageStream(_processLiveFrame);
-      _isStreamingLiveFrames = true;
-
-      // Record the same camera stream so the session can be replayed from
-      // history. If a device cannot record while streaming, tracking still
-      // works and the session is simply saved without video.
-      try {
-        await controller.startVideoRecording();
-      } catch (e) {
-        debugPrint('Live video recording unavailable: $e');
-      }
 
       if (!mounted) {
         unawaited(_releaseCamera(controller));
         return;
       }
 
+      // Publish the active camera *before* the frame stream starts. Previously
+      // the controller was only stored after video recording had started, so
+      // every early frame was dropped by _processLiveFrame.
       setState(() {
         _recordedVideoPath = null;
         _recordedVideoBase64 = null;
         _recordedVideoMimeType = null;
+        _videoRecordingStartedAt = null;
+        _lastPoseFrameRecordedAt = null;
+        _livePoseFrames = <PoseReplayFrame>[];
         _cameraController = controller;
+        _activeCameraDescription = camera;
         _isLiveTracking = true;
         _isAnalyzing = false;
         _isVideo = false;
@@ -700,8 +750,17 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         _sessionStartedAt = DateTime.now();
         _liveFeedback = 'Stand in frame and start exercising';
       });
+
+      await controller.startImageStream(_processLiveFrame);
+      _isStreamingLiveFrames = true;
+
+      // Recording is optional. Starting it must not delay the frame stream or
+      // the live UI on devices where CameraX is slow to open a video session.
+      unawaited(_startRecordingIfPossible(controller));
     } catch (e) {
       _isStreamingLiveFrames = false;
+      _cameraController = null;
+      _activeCameraDescription = null;
       if (controller != null) unawaited(_releaseCamera(controller));
       if (!mounted) return;
       setState(() {
@@ -709,6 +768,23 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         _isLiveTracking = false;
         _error = _describeCameraError(e);
       });
+    }
+  }
+
+  /// Starts the history recording without blocking live pose tracking. Devices
+  /// that cannot stream frames and record at the same time simply save a
+  /// session without a replay video.
+  Future<void> _startRecordingIfPossible(CameraController controller) async {
+    try {
+      await controller.startVideoRecording();
+      // Pose samples are timed from the recording, not from camera startup:
+      // recording begins asynchronously after the frame stream is already live.
+      if (mounted) {
+        _videoRecordingStartedAt = DateTime.now();
+        _lastPoseFrameRecordedAt = null;
+      }
+    } catch (e) {
+      debugPrint('Live video recording unavailable: $e');
     }
   }
 
@@ -876,6 +952,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   Future<void> _stopLiveTrackingSession() async {
     final controller = _cameraController;
     _cameraController = null;
+    _activeCameraDescription = null;
     _isLiveTracking = false;
     _isProcessingFrame = false;
     if (mounted) setState(() => _isFinalizingLive = true);
@@ -904,7 +981,8 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         _sessionStartedAt != null &&
         !_hasSavedSession &&
         _identifiedRepCount == 0 &&
-        _liveKeypoints.isEmpty) {
+        _liveKeypoints.isEmpty &&
+        _livePoseFrames.isEmpty) {
       _persistCompletedSession(allowVideoOnly: true);
     }
 
@@ -926,9 +1004,13 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
     try {
       final controller = _cameraController;
-      if (controller == null || !controller.value.isInitialized) return;
+      final camera = _activeCameraDescription ?? controller?.description;
+      if (controller == null ||
+          !controller.value.isInitialized ||
+          camera == null) {
+        return;
+      }
 
-      final camera = controller.description;
       final keypoints = kIsWeb
           ? await WebPoseService.detectFromCameraImageWeb(
               image,
@@ -942,8 +1024,16 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
       if (!mounted) return;
       if (keypoints == null || keypoints.isEmpty) {
+        final detail = kIsWeb
+            ? null
+            : PoseAnalysisService.lastNativeDetectionError;
         setState(() {
-          _liveFeedback = 'No person detected - step back into frame';
+          _liveDetectionStatus = detail == null
+              ? null
+              : 'Detection issue: $detail';
+          _liveFeedback = detail == null
+              ? 'No person detected - step back into frame'
+              : 'Pose detection could not read this camera frame';
         });
         return;
       }
@@ -958,8 +1048,11 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       }
       // Continuously re-identify the exercise from the live landmark motion
       _classifyExercise(keypoints);
+      // Keep a time-stamped skeleton for the replay video, if recording is on.
+      _recordPoseFrame(keypoints);
 
       setState(() {
+        _liveDetectionStatus = null;
         _liveKeypoints = keypoints;
         if (angle == null) {
           _liveFeedback = 'Tracking landmarks - full body not visible';
@@ -967,6 +1060,9 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       });
     } catch (e) {
       debugPrint('Live frame processing error: $e');
+      if (mounted) {
+        setState(() => _liveDetectionStatus = 'Frame error: $e');
+      }
     } finally {
       _isProcessingFrame = false;
     }
@@ -2114,6 +2210,37 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                 ),
               ),
 
+              // Surface native detector/frame errors instead of silently
+              // showing a static "no person detected" message.
+              if (_liveDetectionStatus != null)
+                Positioned(
+                  top: 74,
+                  left: 10,
+                  right: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.78),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: AppColors.amber.withValues(alpha: 0.7),
+                      ),
+                    ),
+                    child: Text(
+                      _liveDetectionStatus!,
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: AppColors.amber,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+
               // Real-time coaching feedback
               Positioned(
                 bottom: 10,
@@ -2277,10 +2404,14 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                   ),
                 ),
                 Text(
-                  _videoTrackStatus ?? 'Streaming landmarks in real time',
+                  _liveDetectionStatus ??
+                      _videoTrackStatus ??
+                      'Streaming landmarks in real time',
                   style: GoogleFonts.inter(
                     fontSize: 10,
-                    color: _videoTrackStatus != null
+                    color:
+                        _liveDetectionStatus != null ||
+                            _videoTrackStatus != null
                         ? AppColors.amber
                         : AppColors.textMuted,
                   ),
