@@ -102,7 +102,6 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
         final double contentWidth = dialogWidth - 48;
         const double validateButtonWidth = 96;
         const double gap = 8;
-        final double keyFieldWidth = contentWidth - validateButtonWidth - gap;
 
         return AlertDialog(
           backgroundColor: AppColors.cardSurface,
@@ -179,7 +178,7 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
                       controller: _modelController,
                       decoration: const InputDecoration(
                         labelText: 'Model name',
-                        hintText: 'gemini-2.5-flash',
+                        hintText: 'gemini-3.8-flash',
                         isDense: true,
                       ),
                       style: const TextStyle(fontSize: 12),
@@ -197,11 +196,8 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
                   ),
                   const SizedBox(height: 6),
                   Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(
-                        width: keyFieldWidth,
+                      Expanded(
                         child: TextField(
                           controller: _keyController,
                           obscureText: _obscure,
@@ -211,7 +207,12 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
                           decoration: InputDecoration(
                             hintText: 'Paste your API key',
                             isDense: true,
+                            suffixIconConstraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
                             suffixIcon: IconButton(
+                              padding: EdgeInsets.zero,
                               icon: Icon(
                                 _obscure
                                     ? Icons.visibility_outlined
@@ -229,8 +230,11 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
                       const SizedBox(width: gap),
                       SizedBox(
                         width: validateButtonWidth,
-                        height: 46,
+                        height: 48,
                         child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
                           onPressed: _validating ? null : _validate,
                           child: _validating
                               ? SizedBox(

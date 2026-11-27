@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -17,11 +16,14 @@ import 'package:video_player/video_player.dart';
 import 'package:camera/camera.dart';
 
 import '../models/pose_history_models.dart';
+import '../services/live_exercise_classifier.dart';
+import '../services/live_pose_stability.dart';
 import '../services/live_tracking_history_service.dart';
 import '../services/pose_analysis_service.dart';
 import '../theme/app_colors.dart';
 import '../web/web_camera_compat.dart';
 import '../web/web_pose.dart';
+import '../widgets/pose_skeleton_3d_painter.dart';
 import '../widgets/pose_skeleton_painter.dart';
 import '../widgets/api_key_dialog.dart';
 import 'live_tracking_history_screen.dart';
@@ -56,6 +58,10 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
   // Live camera squat tracking
   CameraController? _cameraController;
+
+  /// Tracks the async teardown so a camera switch cannot lock the new
+  /// controller before the old one has released the shared CameraX lock.
+  Future<void>? _cameraReleasePending;
   List<CameraDescription> _availableCameras = const [];
   CameraDescription? _activeCameraDescription;
   String? _activeCameraName;
@@ -66,7 +72,31 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   bool _hasSavedSession = false;
   bool _isProcessingFrame = false;
   bool _isStreamingLiveFrames = false;
+  bool _recordingOwnsFrameStream = false;
+  bool _recordingFallbackUsed = false;
+  int _liveFrameCount = 0;
+  DateTime? _lastLiveFrameAt;
+  Timer? _frameWatchdogTimer;
   String? _liveDetectionStatus;
+
+  /// Rotation applied to stored landmarks to match the landscape replay video.
+  /// Android uses 270°; other platforms stay at 0°. The 2D overlay is rotated
+  /// into the same display space before it is painted.
+  int _liveStreamRotationDegrees = 0;
+
+  /// Orbit angles for the separate 3D skeleton viewport. Keeping these in the
+  /// screen state lets the 2D camera overlay stay locked to the recorded frame
+  /// while the user rotates only the 3D view.
+  double _pose3DYaw = 0;
+  double _pose3DPitch = -0.08;
+
+  /// Kept after teardown so an explicit Save records the orientation used for
+  /// this session's skeletons even after the controller is released.
+  int _lastSessionRotationDegrees = 0;
+
+  /// Counters never consume held or jumping landmarks. The overlay still
+  /// follows every fresh detection, but activity needs a continuous subject.
+  final LivePoseStabilityGate _poseStabilityGate = LivePoseStabilityGate();
 
   // Recorded camera video for the current (or just-stopped) session.
   String? _recordedVideoPath;
@@ -77,19 +107,23 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   List<PoseReplayFrame> _livePoseFrames = <PoseReplayFrame>[];
   List<PoseKeypoint> _liveKeypoints = const [];
   int _squatCount = 0;
-  bool _inSquatDepth = false;
   double _lastKneeAngle = 180;
   double _lastElbowAngle = 180;
-  String _liveFeedback = 'Stand in frame and start squatting';
-  final List<double> _kneeAngleHistory = [];
+  String _liveFeedback = 'Stand in frame and start moving';
 
   // Live exercise identification from tracked landmark motion
-  String _liveExerciseName = 'Identifying exercise...';
+  final LiveExerciseClassifier _exerciseClassifier = LiveExerciseClassifier();
+  String _liveExerciseName = LiveExerciseKind.unknown.name;
+  LiveExerciseCategory _liveExerciseCategory = LiveExerciseCategory.unknown;
   double _minKneeAngleSeen = 180;
   double _minElbowAngleSeen = 180;
   int _curlCount = 0;
   int _pushupCount = 0;
-  bool _armCurled = false;
+  int _coreCount = 0;
+
+  /// Rep count for the exercise currently on screen, including the new neck,
+  /// shoulder, back, tricep, chest and leg patterns that have no legacy field.
+  int _currentRepCount = 0;
 
   // Real-time landmark tracking on a playing video stream
   final GlobalKey _videoBoundaryKey = GlobalKey();
@@ -251,26 +285,49 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
   void _stopLiveTracking() {
     final controller = _cameraController;
+    _frameWatchdogTimer?.cancel();
+    _frameWatchdogTimer = null;
     _cameraController = null;
     _activeCameraDescription = null;
     _isLiveTracking = false;
     _isProcessingFrame = false;
-    if (controller != null) unawaited(_releaseCamera(controller));
+    if (controller != null) {
+      final release = _releaseCamera(controller);
+      _cameraReleasePending = release;
+      unawaited(release);
+    }
+    _recordingOwnsFrameStream = false;
+    _recordingFallbackUsed = false;
+    _liveStreamRotationDegrees = 0;
+    _poseStabilityGate.reset();
   }
 
   /// Stops the frame stream before disposing the controller. Web frame capture
   /// uses the canvas fallback (see [WebCameraCompat]), so there is no
   /// MediaStreamTrackProcessor frame left open when the camera is torn down.
   Future<void> _releaseCamera(CameraController controller) async {
-    if (_isStreamingLiveFrames) {
+    // A callback-owned recording keeps the plugin's image-analysis subscription
+    // alive internally; calling stopImageStream() on it would tear down the
+    // stream the detector still needs.
+    if (_isStreamingLiveFrames && !_recordingOwnsFrameStream) {
       try {
         await controller.stopImageStream();
       } catch (_) {}
       _isStreamingLiveFrames = false;
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
+    await _unlockLiveOrientation(controller);
     try {
       await controller.dispose();
+    } catch (_) {}
+  }
+
+  /// CameraX can keep a capture-orientation lock across controller instances,
+  /// so release it even though new sessions no longer request one.
+  Future<void> _unlockLiveOrientation(CameraController controller) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    try {
+      await controller.unlockCaptureOrientation();
     } catch (_) {}
   }
 
@@ -315,6 +372,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
             x: point.x,
             y: point.y,
             confidence: point.confidence,
+            z: point.z,
           ),
         )
         .toList();
@@ -365,7 +423,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     // Ignore empty sessions unless they carry a recorded video.
     if (!noTracking &&
         _identifiedRepCount == 0 &&
-        _liveExerciseName == 'Identifying exercise...' &&
+        _liveExerciseName == LiveExerciseKind.unknown.name &&
         !_hasRecordedVideo &&
         _livePoseFrames.isEmpty) {
       return false;
@@ -380,6 +438,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       squatCount: _squatCount,
       curlCount: _curlCount,
       pushupCount: _pushupCount,
+      coreCount: _coreCount,
       kneeAngle: _lastKneeAngle,
       elbowAngle: _lastElbowAngle,
       minKneeAngle: _minKneeAngleSeen == 180 ? null : _minKneeAngleSeen,
@@ -395,6 +454,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       videoMimeType: _recordedVideoMimeType,
       poseFrames: List<PoseReplayFrame>.from(_livePoseFrames),
       landmarksMirroredX: _mirrorLiveCamera,
+      streamRotationDegrees: _lastSessionRotationDegrees,
     );
     _sessionStartedAt = null;
     _hasSavedSession = true;
@@ -441,18 +501,21 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   /// Resets all live tracking counters and exercise identification state.
   void _resetLiveTrackingState() {
     PoseAnalysisService.resetLiveTracking();
+    _poseStabilityGate.reset();
+    _liveKeypoints = const [];
+    _exerciseClassifier.reset();
     _squatCount = 0;
-    _inSquatDepth = false;
-    _kneeAngleHistory.clear();
     _lastKneeAngle = 180;
     _lastElbowAngle = 180;
     _liveFeedback = 'Detecting landmarks...';
-    _liveExerciseName = 'Identifying exercise...';
+    _liveExerciseName = LiveExerciseKind.unknown.name;
+    _liveExerciseCategory = LiveExerciseCategory.unknown;
     _minKneeAngleSeen = 180;
     _minElbowAngleSeen = 180;
     _curlCount = 0;
     _pushupCount = 0;
-    _armCurled = false;
+    _coreCount = 0;
+    _currentRepCount = 0;
     _sessionStartedAt = null;
     _hasSavedSession = false;
     _liveDetectionStatus = null;
@@ -644,13 +707,14 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     }
   }
 
-  /// Starts live camera tracking: the person stands in front of the camera
-  /// doing squats and their landmarks are plotted in real time.
+  /// Starts live camera tracking: the person performs an upper-body, lower-body
+  /// or core exercise in front of the camera and landmarks plot in real time.
   ///
   /// Device cameras are enumerated first (which triggers the browser/platform
   /// permission prompt), and when more than one is detected the user chooses
-  /// which one to use. Native devices use ML Kit; the web uses MoveNet.
-  Future<void> _startLiveSquatTracking() async {
+  /// which one to use. Android uses bundled TFLite MoveNet, iOS uses ML Kit,
+  /// and web uses TF.js MoveNet.
+  Future<void> _startLiveExerciseTracking() async {
     _stopVideoFrameTracking();
     _videoPlayerController?.pause();
     _stopLiveTracking();
@@ -721,6 +785,24 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         await controller.setFlashMode(FlashMode.off);
       }
 
+      // Keep the original 270° landscape stream: preview, MP4 and MoveNet all
+      // agree on that orientation, and replay already stores it. The vertical
+      // stretch came from wrapping CameraPreview in a second aspect-ratio box;
+      // the preview now owns its own size and the overlay is drawn inside it.
+      if (!kIsWeb && Platform.isAndroid) {
+        try {
+          await controller.lockCaptureOrientation(
+            DeviceOrientation.landscapeLeft,
+          );
+          _liveStreamRotationDegrees = 270;
+        } catch (e) {
+          debugPrint('Could not lock camera 270-degree orientation: $e');
+          _liveStreamRotationDegrees = 0;
+        }
+      } else {
+        _liveStreamRotationDegrees = 0;
+      }
+
       if (!mounted) {
         unawaited(_releaseCamera(controller));
         return;
@@ -746,21 +828,50 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         _activeCameraName = _displayCameraName(camera);
         _mirrorLiveCamera = camera.lensDirection == CameraLensDirection.front;
         _liveKeypoints = const [];
+        _liveFrameCount = 0;
+        _lastSessionRotationDegrees = _liveStreamRotationDegrees;
+        _lastLiveFrameAt = DateTime.now();
+        _recordingOwnsFrameStream = false;
+        _recordingFallbackUsed = false;
         _resetLiveTrackingState();
         _sessionStartedAt = DateTime.now();
         _liveFeedback = 'Stand in frame and start exercising';
       });
 
-      await controller.startImageStream(_processLiveFrame);
-      _isStreamingLiveFrames = true;
-
-      // Recording is optional. Starting it must not delay the frame stream or
-      // the live UI on devices where CameraX is slow to open a video session.
-      unawaited(_startRecordingIfPossible(controller));
+      if (Platform.isAndroid) {
+        // camera_android_camerax unbinds ImageAnalysis when a plain recording
+        // starts. Passing the stream callback to the recording keeps the same
+        // frames feeding both the MP4 and MoveNet on hardware level < 3.
+        try {
+          await controller.startVideoRecording(onAvailable: _processLiveFrame);
+          _recordingOwnsFrameStream = true;
+          _videoRecordingStartedAt = DateTime.now();
+          _lastPoseFrameRecordedAt = null;
+        } catch (e) {
+          // A plain recording would unbind CameraX image analysis again. Keep
+          // MoveNet alive and save the session without a replay video instead.
+          debugPrint('Recording with frame callback unavailable: $e');
+          await controller.startImageStream(_processLiveFrame);
+          _isStreamingLiveFrames = true;
+          if (mounted) {
+            setState(() {
+              _liveDetectionStatus = 'Tracking without video on this device';
+            });
+          }
+        }
+      } else {
+        await controller.startImageStream(_processLiveFrame);
+        _isStreamingLiveFrames = true;
+        // Recording is optional. Starting it must not delay the frame stream or
+        // the live UI on devices where opening a video session is slow.
+        unawaited(_startRecordingIfPossible(controller));
+      }
+      _startFrameWatchdog();
     } catch (e) {
       _isStreamingLiveFrames = false;
       _cameraController = null;
       _activeCameraDescription = null;
+      _liveStreamRotationDegrees = 0;
       if (controller != null) unawaited(_releaseCamera(controller));
       if (!mounted) return;
       setState(() {
@@ -785,6 +896,58 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       }
     } catch (e) {
       debugPrint('Live video recording unavailable: $e');
+    }
+  }
+
+  /// Warns only when the camera transport itself stalls. Pose detection being
+  /// empty is a different state and is reported by [_processLiveFrame].
+  void _startFrameWatchdog() {
+    _frameWatchdogTimer?.cancel();
+    _lastLiveFrameAt = DateTime.now();
+    _frameWatchdogTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!_isLiveTracking || _cameraController == null) return;
+      final last = _lastLiveFrameAt;
+      if (last == null ||
+          DateTime.now().difference(last) < const Duration(seconds: 3)) {
+        return;
+      }
+      if (_recordingOwnsFrameStream && !_recordingFallbackUsed) {
+        unawaited(_recoverFromBlockedRecording(_cameraController!));
+      } else if (!mounted) {
+        return;
+      } else if (_liveFrameCount == 0) {
+        setState(() {
+          _liveDetectionStatus = 'No camera frames received';
+          _liveFeedback = 'Camera frames are unavailable on this device';
+        });
+      }
+    });
+  }
+
+  /// If a device cannot stream frames while recording, drop the video and keep
+  /// MoveNet tracking alive. This never changes the lens or camera settings.
+  Future<void> _recoverFromBlockedRecording(CameraController controller) async {
+    _recordingFallbackUsed = true;
+    try {
+      if (controller.value.isRecordingVideo) {
+        await controller.stopVideoRecording();
+      }
+    } catch (_) {}
+    _recordingOwnsFrameStream = false;
+    try {
+      await controller.startImageStream(_processLiveFrame);
+      _isStreamingLiveFrames = true;
+      _lastLiveFrameAt = DateTime.now();
+      if (mounted) {
+        setState(() {
+          _liveDetectionStatus = 'Tracking without video on this device';
+          _liveFeedback = 'Stand in frame and start squatting';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _liveDetectionStatus = 'Camera frames stopped: $e');
+      }
     }
   }
 
@@ -895,6 +1058,10 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     if (camera == null || !mounted || camera == current) return;
 
     _stopLiveTracking();
+    // CameraX keeps the capture-orientation lock on a shared platform instance;
+    // let the old controller release it before locking the replacement camera.
+    final release = _cameraReleasePending;
+    if (release != null) await release;
     await _startLiveWithCamera(camera);
   }
 
@@ -965,6 +1132,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         _isStreamingLiveFrames = false;
       }
       await _finalizeVideoRecording(controller);
+      await _unlockLiveOrientation(controller);
       try {
         await controller.dispose();
       } catch (_) {}
@@ -972,6 +1140,11 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
 
+    _frameWatchdogTimer?.cancel();
+    _frameWatchdogTimer = null;
+    _recordingOwnsFrameStream = false;
+    _recordingFallbackUsed = false;
+    _poseStabilityGate.reset();
     _stopVideoFrameTracking();
     WebPoseService.clearVideoSource();
 
@@ -986,6 +1159,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       _persistCompletedSession(allowVideoOnly: true);
     }
 
+    _liveStreamRotationDegrees = 0;
     if (!mounted) return;
     setState(() {
       _isFinalizingLive = false;
@@ -999,6 +1173,8 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   }
 
   Future<void> _processLiveFrame(CameraImage image) async {
+    _lastLiveFrameAt = DateTime.now();
+    _liveFrameCount++;
     if (_isProcessingFrame) return;
     _isProcessingFrame = true;
 
@@ -1027,35 +1203,51 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
         final detail = kIsWeb
             ? null
             : PoseAnalysisService.lastNativeDetectionError;
+        final moveNetDetail = kIsWeb
+            ? null
+            : PoseAnalysisService.lastMoveNetDiagnostics;
         setState(() {
-          _liveDetectionStatus = detail == null
-              ? null
-              : 'Detection issue: $detail';
-          _liveFeedback = detail == null
-              ? 'No person detected - step back into frame'
-              : 'Pose detection could not read this camera frame';
+          // A missed frame must never leave the previous skeleton on screen or
+          // keep a counter armed: both are the classic "landmarks generate
+          // activity by themselves" symptom.
+          _poseStabilityGate.reset();
+          _exerciseClassifier.disarm();
+          _liveKeypoints = const [];
+          if (detail != null) {
+            _liveDetectionStatus = 'Detection issue: $detail';
+            _liveFeedback = 'Pose detection could not read this camera frame';
+          } else if (moveNetDetail != null) {
+            // A silent empty result is now distinguishable from a camera
+            // transport failure without needing logcat on the device.
+            _liveDetectionStatus =
+                'MoveNet: $moveNetDetail · $_liveFrameCount frames';
+            _liveFeedback = 'No person detected - adjust position or lighting';
+          } else {
+            _liveDetectionStatus = null;
+            _liveFeedback = 'No person detected - step back into frame';
+          }
         });
         return;
       }
 
-      final angle = _computeKneeAngle(keypoints);
-      if (angle != null) {
-        _updateSquatCounter(angle);
+      final now = DateTime.now();
+      final stable = _poseStabilityGate.accept(keypoints, now);
+
+      if (stable) {
+        // One classifier owns identification and every rep counter, so the
+        // displayed name and the counter can never disagree.
+        _applyExerciseReading(_exerciseClassifier.update(keypoints, now));
+        // Only confirmed poses reach the replay video.
+        _recordPoseFrame(keypoints);
       }
-      final elbow = _computeElbowAngle(keypoints);
-      if (elbow != null) {
-        _lastElbowAngle = elbow;
-      }
-      // Continuously re-identify the exercise from the live landmark motion
-      _classifyExercise(keypoints);
-      // Keep a time-stamped skeleton for the replay video, if recording is on.
-      _recordPoseFrame(keypoints);
 
       setState(() {
         _liveDetectionStatus = null;
+        // Keypoints stay in detector coordinates for counters and history;
+        // only the drawn overlay is rotated for the preview.
         _liveKeypoints = keypoints;
-        if (angle == null) {
-          _liveFeedback = 'Tracking landmarks - full body not visible';
+        if (!stable) {
+          _liveFeedback = 'Stabilizing tracking on this person...';
         }
       });
     } catch (e) {
@@ -1065,6 +1257,30 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
       }
     } finally {
       _isProcessingFrame = false;
+    }
+  }
+
+  /// Copies a classifier reading into the visible UI and history state.
+  void _applyExerciseReading(LiveExerciseReading reading) {
+    _liveExerciseName = reading.kind.name;
+    _liveExerciseCategory = reading.category;
+    _liveFeedback = reading.feedback;
+    _squatCount = _exerciseClassifier.countFor(LiveExerciseKind.squat);
+    _curlCount = _exerciseClassifier.countFor(LiveExerciseKind.bicepCurl);
+    _pushupCount = _exerciseClassifier.countFor(LiveExerciseKind.pushUp);
+    _coreCount = _exerciseClassifier.countFor(LiveExerciseKind.crunch);
+    // The classifier already returns the count for the identified kind, so new
+    // exercise groups work without adding another per-family field.
+    _currentRepCount = reading.repCount;
+    final knee = reading.kneeAngle;
+    final elbow = reading.elbowAngle;
+    if (knee != null) {
+      _lastKneeAngle = knee;
+      if (knee < _minKneeAngleSeen) _minKneeAngleSeen = knee;
+    }
+    if (elbow != null) {
+      _lastElbowAngle = elbow;
+      if (elbow < _minElbowAngleSeen) _minElbowAngleSeen = elbow;
     }
   }
 
@@ -1121,22 +1337,11 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
 
       if (keypoints != null && keypoints.isNotEmpty) {
         final detected = keypoints;
-        final angle = _computeKneeAngle(detected);
-        if (angle != null) {
-          _updateSquatCounter(angle);
-        }
-        final elbow = _computeElbowAngle(detected);
-        if (elbow != null) {
-          _lastElbowAngle = elbow;
-        }
+        _applyExerciseReading(_exerciseClassifier.update(detected));
         setState(() {
           _liveKeypoints = detected;
           _videoTrackStatus = null;
-          if (angle == null) {
-            _liveFeedback = 'Tracking landmarks - full body not visible';
-          }
         });
-        _classifyExercise(detected);
       } else if (kIsWeb) {
         // Surface engine status so tracking problems are visible on screen
         final status = WebPoseService.lastStatus;
@@ -1151,211 +1356,6 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
     } finally {
       _isProcessingVideoFrame = false;
     }
-  }
-
-  /// Classifies the exercise from tracked landmark motion, re-evaluated on
-  /// every frame so the whole video is continuously reviewed and the name
-  /// updates as soon as a different movement pattern is detected. Uses
-  /// knee-angle dips for squats, and elbow flexion cycles for curls (upright
-  /// torso) or push-ups (horizontal torso).
-  void _classifyExercise(List<PoseKeypoint> kps) {
-    double? jointAngle(String aName, String bName, String cName) {
-      final a = kps.where((k) => k.name == aName).toList();
-      final b = kps.where((k) => k.name == bName).toList();
-      final c = kps.where((k) => k.name == cName).toList();
-      if (a.isEmpty || b.isEmpty || c.isEmpty) return null;
-      if (a.first.confidence < 0.3 ||
-          b.first.confidence < 0.3 ||
-          c.first.confidence < 0.3) {
-        return null;
-      }
-      return _angleBetween(
-        Offset(a.first.x, a.first.y),
-        Offset(b.first.x, b.first.y),
-        Offset(c.first.x, c.first.y),
-      );
-    }
-
-    // Track deepest knee flexion
-    final knee =
-        jointAngle('left_hip', 'left_knee', 'left_ankle') ??
-        jointAngle('right_hip', 'right_knee', 'right_ankle');
-    if (knee != null && knee < _minKneeAngleSeen) {
-      _minKneeAngleSeen = knee;
-    }
-
-    // Track deepest elbow flexion
-    final elbow =
-        jointAngle('left_shoulder', 'left_elbow', 'left_wrist') ??
-        jointAngle('right_shoulder', 'right_elbow', 'right_wrist');
-    if (elbow != null && elbow < _minElbowAngleSeen) {
-      _minElbowAngleSeen = elbow;
-    }
-
-    // Torso orientation: horizontal body => push-up, upright => curl
-    final horizontal = _isTorsoHorizontal(kps);
-
-    // Count elbow flexion cycles (bicep curl or push-up depending on torso)
-    if (elbow != null) {
-      if (elbow < 90) _armCurled = true;
-      if (elbow > 150 && _armCurled) {
-        _armCurled = false;
-        if (horizontal) {
-          _pushupCount++;
-        } else {
-          _curlCount++;
-        }
-      }
-    }
-
-    // Identification is re-checked at every point in the video: whichever
-    // movement signature is currently being performed wins.
-    String name = 'Identifying exercise...';
-    if (horizontal && _minElbowAngleSeen < 120) {
-      name = 'Push-Up';
-    } else if (_curlCount > 0 && _squatCount == 0) {
-      name = 'Bicep Curl';
-    } else if (_squatCount > 0 || _minKneeAngleSeen < 110) {
-      name = 'Bodyweight Squat';
-    } else if (_curlCount > 0) {
-      name = 'Bicep Curl';
-    } else if (horizontal) {
-      name = 'Push-Up (probable)';
-    }
-
-    if (name != _liveExerciseName && mounted) {
-      setState(() => _liveExerciseName = name);
-    }
-  }
-
-  /// True when the shoulder-hip line is roughly horizontal (lying/plank
-  /// orientation, as in a push-up).
-  bool _isTorsoHorizontal(List<PoseKeypoint> kps) {
-    for (final side in ['left', 'right']) {
-      final shoulder = kps.where((k) => k.name == '${side}_shoulder').toList();
-      final hip = kps.where((k) => k.name == '${side}_hip').toList();
-      if (shoulder.isNotEmpty &&
-          hip.isNotEmpty &&
-          shoulder.first.confidence > 0.4 &&
-          hip.first.confidence > 0.4) {
-        if ((shoulder.first.y - hip.first.y).abs() < 0.06) return true;
-      }
-    }
-    return false;
-  }
-
-  /// Knee angle (hip-knee-ankle) averaged over both legs in degrees.
-  double? _computeKneeAngle(List<PoseKeypoint> keypoints) {
-    double? angleFor(String side) {
-      final hip = keypoints.firstWhere(
-        (k) => k.name == '${side}_hip',
-        orElse: () => keypoints.first,
-      );
-      final knee = keypoints.firstWhere(
-        (k) => k.name == '${side}_knee',
-        orElse: () => keypoints.first,
-      );
-      final ankle = keypoints.firstWhere(
-        (k) => k.name == '${side}_ankle',
-        orElse: () => keypoints.first,
-      );
-      if (hip.name != '${side}_hip' ||
-          knee.name != '${side}_knee' ||
-          ankle.name != '${side}_ankle') {
-        return null;
-      }
-      if (hip.confidence < 0.3 ||
-          knee.confidence < 0.3 ||
-          ankle.confidence < 0.3) {
-        return null;
-      }
-      return _angleBetween(
-        Offset(hip.x, hip.y),
-        Offset(knee.x, knee.y),
-        Offset(ankle.x, ankle.y),
-      );
-    }
-
-    final left = angleFor('left');
-    final right = angleFor('right');
-    if (left != null && right != null) return (left + right) / 2;
-    return left ?? right;
-  }
-
-  /// Elbow angle (shoulder-elbow-wrist) averaged over both arms in degrees.
-  double? _computeElbowAngle(List<PoseKeypoint> keypoints) {
-    double? angleFor(String side) {
-      final shoulder = keypoints.firstWhere(
-        (k) => k.name == '${side}_shoulder',
-        orElse: () => keypoints.first,
-      );
-      final elbow = keypoints.firstWhere(
-        (k) => k.name == '${side}_elbow',
-        orElse: () => keypoints.first,
-      );
-      final wrist = keypoints.firstWhere(
-        (k) => k.name == '${side}_wrist',
-        orElse: () => keypoints.first,
-      );
-      if (shoulder.name != '${side}_shoulder' ||
-          elbow.name != '${side}_elbow' ||
-          wrist.name != '${side}_wrist') {
-        return null;
-      }
-      if (shoulder.confidence < 0.3 ||
-          elbow.confidence < 0.3 ||
-          wrist.confidence < 0.3) {
-        return null;
-      }
-      return _angleBetween(
-        Offset(shoulder.x, shoulder.y),
-        Offset(elbow.x, elbow.y),
-        Offset(wrist.x, wrist.y),
-      );
-    }
-
-    final left = angleFor('left');
-    final right = angleFor('right');
-    if (left != null && right != null) return (left + right) / 2;
-    return left ?? right;
-  }
-
-  static double _angleBetween(Offset a, Offset b, Offset c) {
-    final v1 = a - b;
-    final v2 = c - b;
-    final denom = (v1.distance * v2.distance);
-    if (denom == 0) return 180;
-    final cos = (v1.dx * v2.dx + v1.dy * v2.dy) / denom;
-    return math.acos(cos.clamp(-1.0, 1.0)) * 180 / math.pi;
-  }
-
-  /// Counts a squat rep using knee-angle hysteresis (below 110deg = down,
-  /// back above 155deg = standing).
-  void _updateSquatCounter(double angle) {
-    _kneeAngleHistory.add(angle);
-    if (_kneeAngleHistory.length > 5) _kneeAngleHistory.removeAt(0);
-    final smoothed =
-        _kneeAngleHistory.reduce((a, b) => a + b) / _kneeAngleHistory.length;
-    _lastKneeAngle = smoothed;
-
-    String? feedback;
-    if (smoothed < 110 && !_inSquatDepth) {
-      _inSquatDepth = true;
-    }
-    if (smoothed > 155 && _inSquatDepth) {
-      _inSquatDepth = false;
-      _squatCount++;
-    }
-
-    if (smoothed >= 155) {
-      feedback = _inSquatDepth ? 'Standing up' : 'Standing - squat down slowly';
-    } else if (smoothed >= 110) {
-      feedback = 'Descending - keep going for parallel depth';
-    } else {
-      feedback = 'Deep squat - drive up through the heels';
-    }
-
-    if (mounted) setState(() => _liveFeedback = feedback!);
   }
 
   void _cycleDemoExercise() {
@@ -1494,6 +1494,10 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                           _isLiveTracking
                               ? _buildLiveTrackingPreview()
                               : _buildMediaPreview(),
+                          if (_isLiveTracking) ...[
+                            const SizedBox(height: 12),
+                            _buildPose3DViewport(),
+                          ],
                           if (_isLiveTracking ||
                               (_isVideo && _videoPlayerController != null)) ...[
                             const SizedBox(height: 14),
@@ -1669,13 +1673,13 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
           ],
         ),
         const SizedBox(height: 10),
-        // Live Squat Tracking button (replaces the bundled test workout video)
+        // Live Exercise Tracking button (replaces the bundled test workout video)
         GestureDetector(
           onTap: _isFinalizingLive
               ? null
               : _isLiveTracking
               ? _stopLiveTrackingSession
-              : _startLiveSquatTracking,
+              : _startLiveExerciseTracking,
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
@@ -1717,7 +1721,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                             ? 'SAVING CAPTURED VIDEO...'
                             : _isLiveTracking
                             ? 'STOP LIVE TRACKING'
-                            : 'LIVE SQUAT TRACKING (PERSON IN FRONT OF CAMERA)',
+                            : 'LIVE EXERCISE TRACKING (PERSON IN FRONT OF CAMERA)',
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -1729,7 +1733,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        'Point the camera at yourself and squat - landmarks plot in real time',
+                        'Point the camera at yourself - landmarks plot in real time',
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           color: AppColors.textSlate,
@@ -1866,6 +1870,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                       painter: PoseSkeletonPainter(
                         keypoints: _liveKeypoints,
                         lineColor: AppColors.emerald,
+                        minConfidence: 0.12,
                       ),
                     )
                   else if (_analysisResult != null)
@@ -2073,228 +2078,309 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   Widget _buildLiveTrackingPreview() {
     final controller = _cameraController;
     final initialized = controller != null && controller.value.isInitialized;
+    // CameraPreview owns both the texture rotation and the aspect ratio. All
+    // overlays are passed as its child so they inherit exactly the same box;
+    // wrapping it in a second AspectRatio is what stretched the video while
+    // recording. Keypoints are rotated into this display space by
+    // [_displayLiveKeypoints] before painting.
+    final overlayStack = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (_displayLiveKeypoints.isNotEmpty)
+          CustomPaint(
+            painter: PoseSkeletonPainter(
+              keypoints: _displayLiveKeypoints,
+              lineColor: AppColors.emerald,
+              minConfidence: 0.12,
+            ),
+          ),
+
+        // LIVE badge
+        Positioned(
+          top: 10,
+          left: 10,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: AppColors.rose.withValues(alpha: 0.7)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.circle, color: AppColors.rose, size: 8),
+                const SizedBox(width: 5),
+                Text(
+                  'LIVE POSE TRACKING',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.rose,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Landmark count badge
+        Positioned(
+          top: 10,
+          right: 10,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: AppColors.emerald.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Text(
+              '$_liveFrameCount FRAMES · ${_liveKeypoints.length} LANDMARKS',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                color: AppColors.emerald,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+        ),
+
+        // Active camera + switch control
+        Positioned(
+          top: 42,
+          left: 10,
+          right: 10,
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    _activeCameraName ?? 'Camera',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: AppColors.textLight,
+                    ),
+                  ),
+                ),
+              ),
+              if (_availableCameras.length > 1)
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.switch_camera, size: 16),
+                    color: AppColors.primaryOrange,
+                    tooltip: 'Switch camera',
+                    onPressed: _switchCamera,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        // Surface native detector/frame errors instead of silently
+        // showing a static "no person detected" message.
+        if (_liveDetectionStatus != null)
+          Positioned(
+            top: 74,
+            left: 10,
+            right: 10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: AppColors.amber.withValues(alpha: 0.7),
+                ),
+              ),
+              child: Text(
+                _liveDetectionStatus!,
+                style: GoogleFonts.inter(fontSize: 10, color: AppColors.amber),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+
+        // Real-time coaching feedback
+        Positioned(
+          bottom: 10,
+          left: 10,
+          right: 10,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.75),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.orangeBorder),
+            ),
+            child: Text(
+              _liveFeedback,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textLight,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final preview = initialized
+        ? CameraPreview(controller, child: overlayStack)
+        : AspectRatio(aspectRatio: 3 / 4, child: overlayStack);
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.emerald.withValues(alpha: 0.5)),
       ),
+      child: ClipRRect(borderRadius: BorderRadius.circular(15), child: preview),
+    );
+  }
+
+  /// Separate perspective viewport for the live skeleton. The camera image and
+  /// 2D overlay stay untouched; only this card rotates with the drag gesture.
+  Widget _buildPose3DViewport() {
+    final hasKeypoints = _liveKeypoints.isNotEmpty;
+    return Container(
+      height: 190,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.emerald.withValues(alpha: 0.45)),
+      ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15),
-        child: AspectRatio(
-          aspectRatio: initialized ? (1 / controller.value.aspectRatio) : 3 / 4,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (initialized) CameraPreview(controller),
-
-              // Real-time landmark skeleton overlay plotted on the person
-              if (_liveKeypoints.isNotEmpty)
-                CustomPaint(
-                  painter: PoseSkeletonPainter(
-                    keypoints: _liveKeypoints,
-                    lineColor: AppColors.emerald,
-                  ),
-                ),
-
-              // LIVE badge
-              Positioned(
-                top: 10,
-                left: 10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: AppColors.rose.withValues(alpha: 0.7),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (hasKeypoints)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragUpdate: (details) {
+                    setState(() {
+                      _pose3DYaw += details.delta.dx * 0.01;
+                    });
+                  },
+                  onVerticalDragUpdate: (details) {
+                    setState(() {
+                      _pose3DPitch = (_pose3DPitch - details.delta.dy * 0.006)
+                          .clamp(-0.6, 0.5);
+                    });
+                  },
+                  child: CustomPaint(
+                    painter: PoseSkeleton3DPainter(
+                      keypoints: _liveKeypoints,
+                      yaw: _pose3DYaw,
+                      pitch: _pose3DPitch,
+                      lineColor: AppColors.emerald,
+                      pointColor: AppColors.textWhite,
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.circle, color: AppColors.rose, size: 8),
-                      const SizedBox(width: 5),
-                      Text(
-                        'LIVE POSE TRACKING',
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.rose,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ],
+                ),
+              )
+            else
+              Center(
+                child: Text(
+                  '3D VIEW · WAITING FOR LANDMARKS',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 10,
+                    color: AppColors.textMuted,
+                    letterSpacing: 0.8,
                   ),
                 ),
               ),
-
-              // Landmark count badge
-              Positioned(
-                top: 10,
-                right: 10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: AppColors.emerald.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  child: Text(
-                    '${_liveKeypoints.length} LANDMARKS',
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.emerald,
-                      letterSpacing: 0.8,
-                    ),
+            Positioned(
+              top: 8,
+              left: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '3D SKELETON · DRAG TO ROTATE',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.emerald,
+                    letterSpacing: 0.8,
                   ),
                 ),
               ),
-
-              // Active camera + switch control
-              Positioned(
-                top: 42,
-                left: 10,
-                right: 10,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          _activeCameraName ?? 'Camera',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            color: AppColors.textLight,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (_availableCameras.length > 1)
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.switch_camera, size: 16),
-                          color: AppColors.primaryOrange,
-                          tooltip: 'Switch camera',
-                          onPressed: _switchCamera,
-                          constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
-                          ),
-                          padding: EdgeInsets.zero,
-                        ),
-                      ),
-                  ],
-                ),
+            ),
+            Positioned(
+              top: 4,
+              right: 6,
+              child: IconButton(
+                icon: const Icon(Icons.restore, size: 16),
+                color: AppColors.emerald,
+                tooltip: 'Reset 3D view to 0,0',
+                onPressed: () {
+                  setState(() {
+                    _pose3DYaw = 0;
+                    _pose3DPitch = -0.08;
+                  });
+                },
               ),
-
-              // Surface native detector/frame errors instead of silently
-              // showing a static "no person detected" message.
-              if (_liveDetectionStatus != null)
-                Positioned(
-                  top: 74,
-                  left: 10,
-                  right: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.78),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: AppColors.amber.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    child: Text(
-                      _liveDetectionStatus!,
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        color: AppColors.amber,
-                      ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-
-              // Real-time coaching feedback
-              Positioned(
-                bottom: 10,
-                left: 10,
-                right: 10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.75),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.orangeBorder),
-                  ),
-                  child: Text(
-                    _liveFeedback,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textLight,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
+  /// Keypoints are detected in the camera's upright frame; the 270° capture
+  /// lock rotates the displayed texture, so the same rotation is applied to the
+  /// points before painting. Angles and rep counting use the unrotated stream.
+  List<PoseKeypoint> get _displayLiveKeypoints =>
+      PoseAnalysisService.rotateStream(
+        _liveKeypoints,
+        _liveStreamRotationDegrees,
+      );
+
   /// Label for the rep counter: the identified exercise name + " COUNTER",
   /// e.g. "BICEP CURL COUNTER" instead of a hardcoded "SQUATS COUNTED".
   String get _counterLabel {
-    if (_liveExerciseName == 'Identifying exercise...') {
+    if (_liveExerciseCategory == LiveExerciseCategory.unknown) {
       return 'EXERCISE COUNTER';
     }
     return '${_liveExerciseName.toUpperCase()} COUNTER';
   }
 
-  /// Rep count for the exercise currently being identified.
-  int get _identifiedRepCount {
-    switch (_liveExerciseName) {
-      case 'Bicep Curl':
-        return _curlCount;
-      case 'Push-Up':
-      case 'Push-Up (probable)':
-        return _pushupCount;
-      default:
-        return _squatCount;
-    }
-  }
+  /// Rep count for the exercise currently being identified. The classifier
+  /// keeps a separate counter per exercise kind, so switching movements never
+  /// mixes totals.
+  int get _identifiedRepCount => _currentRepCount;
 
   Widget _buildLiveStatsCard() {
     return Container(
@@ -2546,7 +2632,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
   }
 
   Widget _buildLiveIdentificationBanner() {
-    final identified = _liveExerciseName != 'Identifying exercise...';
+    final identified = _liveExerciseCategory != LiveExerciseCategory.unknown;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -2583,6 +2669,17 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
                   ),
                 ),
                 const SizedBox(height: 2),
+                Text(
+                  _liveExerciseCategory.label,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: identified
+                        ? AppColors.primaryOrange
+                        : AppColors.textMuted,
+                    letterSpacing: 1.0,
+                  ),
+                ),
                 Text(
                   _liveExerciseName,
                   style: GoogleFonts.spaceGrotesk(
@@ -2911,7 +3008,7 @@ class _PoseTrackingScreenState extends State<PoseTrackingScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'Upload a workout image or video, or start\n"Live Squat Tracking" to point the camera at\nyourself and see landmarks plot in real time.',
+            'Upload a workout image or video, or start\n"Live Exercise Tracking" to point the camera at\nyourself and see landmarks plot in real time.',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 13,

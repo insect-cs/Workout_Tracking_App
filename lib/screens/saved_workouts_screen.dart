@@ -263,14 +263,19 @@ class _SavedWorkoutsScreenState extends State<SavedWorkoutsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        w.date.toUpperCase(),
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSlate,
+                      Expanded(
+                        child: Text(
+                          w.date.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSlate,
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 4),
                       InkWell(
                         onTap: () {
                           widget.state.deleteWorkout(w.id);

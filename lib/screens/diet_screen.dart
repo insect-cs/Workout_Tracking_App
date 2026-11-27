@@ -6,9 +6,11 @@ import 'package:image_picker/image_picker.dart';
 import '../models/diet_models.dart';
 import '../services/diet_export_service.dart';
 import '../services/diet_service.dart';
+import '../services/nutrient_analysis.dart';
 import '../state/diet_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/api_key_dialog.dart';
+import '../widgets/nutrient_chart.dart';
 
 /// Day planner: pick a date, choose one of the 24 hourly slots, add Food or
 /// Water activities, analyse food with Gemini and track the remainder of the
@@ -286,6 +288,8 @@ class _DietScreenState extends State<DietScreen> {
     if (hour == null) return;
 
     final DietEntry entry;
+    final FoodAnalysis? savedFoodAnalysis =
+        _activityType == DietActivityType.food ? _analysis : null;
     if (_activityType == DietActivityType.food) {
       final analysis = _analysis;
       if (analysis == null) {
@@ -347,6 +351,9 @@ class _DietScreenState extends State<DietScreen> {
           behavior: SnackBarBehavior.floating,
         ),
       );
+      if (savedFoodAnalysis != null) {
+        _showNutrientSheet(savedFoodAnalysis);
+      }
     }
   }
 
@@ -381,12 +388,14 @@ class _DietScreenState extends State<DietScreen> {
                         ),
                         const SizedBox(height: 10),
                         _buildSlotGrid(),
-                        const SizedBox(height: 20),
-                        _buildGoalsCard(),
                         if (_selectedHour != null) ...[
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 12),
+                          _buildSelectionBanner(_selectedHour!),
+                          const SizedBox(height: 10),
                           _buildEditor(_selectedHour!),
                         ],
+                        const SizedBox(height: 20),
+                        _buildGoalsCard(),
                         const SizedBox(height: 20),
                         _buildWeeklyGoalsCard(),
                         const SizedBox(height: 20),
@@ -614,32 +623,104 @@ class _DietScreenState extends State<DietScreen> {
     );
   }
 
+  Widget _buildSelectionBanner(int hour) {
+    return Container(
+      key: const Key('slot-selection-banner'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.orangeSoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.primaryOrange),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle, size: 16, color: AppColors.primaryOrange),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Selected ${slotLabel(hour)} · add an activity below',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textWhite,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _slotTile(int hour, int entryCount) {
     final isSelected = _selectedHour == hour;
     // A slot turns green as soon as it has an activity and goes back to red
     // when its last activity is removed.
     final isFilled = entryCount > 0;
     final label = '${hour.toString().padLeft(2, '0')}:00';
+    final background = isSelected
+        ? AppColors.primaryOrange
+        : isFilled
+        ? AppColors.emerald
+        : AppColors.rose;
+    final foreground = isSelected ? AppColors.onPrimary : Colors.white;
     return Semantics(
+      selected: isSelected,
       label: isFilled ? 'Filled slot $label' : 'Empty slot $label',
-      child: InkWell(
-        onTap: () => _selectHour(hour),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isFilled ? AppColors.emerald : AppColors.rose,
+      child: AnimatedScale(
+        scale: isSelected ? 1.04 : 1.0,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: Key('slot-tile-$hour'),
+            onTap: () => _selectHour(hour),
             borderRadius: BorderRadius.circular(12),
-            border: isSelected
-                ? Border.all(color: AppColors.primaryOrange, width: 2)
-                : null,
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOut,
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected ? AppColors.onPrimary : Colors.transparent,
+                  width: isSelected ? 2 : 1,
+                ),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: AppColors.primaryOrange.withValues(
+                            alpha: 0.45,
+                          ),
+                          blurRadius: 10,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Stack(
+                children: [
+                  Center(
+                    child: Text(
+                      label,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: foreground,
+                      ),
+                    ),
+                  ),
+                  if (isSelected)
+                    Positioned(
+                      top: 3,
+                      right: 3,
+                      child: Icon(
+                        Icons.check_circle,
+                        size: 11,
+                        color: foreground,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -1015,8 +1096,20 @@ class _DietScreenState extends State<DietScreen> {
     );
   }
 
-  void _showSummarySheet() {
-    final summary = _store.buildSummary(_selectedDate);
+  /// Shows the nutrient chart for the food that was just saved, together with
+  /// the current week's totals and the foods contributing the most nutrients.
+  void _showNutrientSheet(FoodAnalysis analysis) {
+    final food = breakdownForAnalysis(analysis);
+    final week = DietState.weekDates(_selectedDate);
+    final weeklySummary = _store.buildSummary(
+      _selectedDate,
+      from: week.first,
+      to: week.last,
+    );
+    final weekly = breakdownForEntries(
+      weeklySummary.entries.map((item) => item.entry),
+    );
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1024,138 +1117,296 @@ class _DietScreenState extends State<DietScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (sheetContext) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.75,
-        minChildSize: 0.5,
-        maxChildSize: 0.92,
-        builder: (context, scrollController) => ListView(
-          controller: scrollController,
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(4),
+      builder: (sheetContext) => SafeArea(
+        child: FractionallySizedBox(
+          heightFactor: 0.86,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'DIET SUMMARY',
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textWhite,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              summary.scope,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                color: AppColors.textSlate,
-              ),
-            ),
-            const SizedBox(height: 14),
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 2.1,
-              children: [
-                _summaryMetric(
-                  Icons.local_fire_department,
-                  'Calories',
-                  '${summary.totalCalories} kcal',
-                  AppColors.primaryOrange,
-                ),
-                _summaryMetric(
-                  Icons.water_drop_outlined,
-                  'Water',
-                  '${summary.totalWaterMl} ml',
-                  AppColors.emerald,
-                ),
-                _summaryMetric(
-                  Icons.bedtime_outlined,
-                  'Sleep',
-                  _formatSleep(summary.totalSleepMinutes),
-                  AppColors.primaryOrange,
-                ),
-                _summaryMetric(
-                  Icons.event_available_outlined,
-                  'Days at 50%+',
-                  '${summary.daysGoalMet}/${summary.days.length}',
-                  AppColors.rose,
-                ),
-                _summaryMetric(
-                  Icons.restaurant_menu,
-                  'Food logs',
-                  '${summary.foodCount}',
-                  AppColors.primaryOrange,
-                ),
-                _summaryMetric(
-                  Icons.check_circle_outline,
-                  'Activities',
-                  '${summary.totalActivities}',
-                  AppColors.emerald,
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            _sectionLabel('DAILY BREAKDOWN'),
-            const SizedBox(height: 8),
-            if (summary.days.isEmpty)
+              const SizedBox(height: 16),
               Text(
-                'No activities logged yet.',
+                'NUTRIENTS',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textWhite,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '${analysis.foodItem} • ${analysis.calories} kcal',
                 style: GoogleFonts.inter(
                   fontSize: 11,
                   color: AppColors.textSlate,
                 ),
-              )
-            else
-              ...summary.days.map(_buildSummaryDayRow),
-            const SizedBox(height: 18),
-            _sectionLabel('EXPORT'),
-            const SizedBox(height: 8),
-            Row(
+              ),
+              const SizedBox(height: 14),
+              _sectionLabel('THIS FOOD'),
+              const SizedBox(height: 8),
+              NutrientBarChart(
+                breakdown: food,
+                emptyLabel:
+                    'Gemini returned no numeric nutrients for this food.',
+              ),
+              const SizedBox(height: 18),
+              _sectionLabel('THIS WEEK'),
+              const SizedBox(height: 8),
+              NutrientBarChart(
+                breakdown: weekly,
+                emptyLabel: 'No analysed foods saved this week yet.',
+                barColor: AppColors.emerald,
+              ),
+              const SizedBox(height: 18),
+              _sectionLabel('MAJOR CONTRIBUTOR FOODS'),
+              const SizedBox(height: 8),
+              NutrientContributorList(breakdown: weekly),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSummarySheet() {
+    DateTimeRange? range;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final summary = _store.buildSummary(
+            _selectedDate,
+            from: range?.start,
+            to: range?.end,
+          );
+          final nutrients = breakdownForEntries(
+            summary.entries.map((item) => item.entry),
+          );
+          final today = DateTime.now();
+          final firstDay = DateTime(2020);
+          final lastDay = DateTime(today.year, today.month, today.day);
+
+          void applyLastDays(int days) {
+            final end = lastDay;
+            final start = end.subtract(Duration(days: days - 1));
+            setSheetState(() => range = DateTimeRange(start: start, end: end));
+          }
+
+          Future<void> pickRange() async {
+            final picked = await showDateRangePicker(
+              context: sheetContext,
+              firstDate: firstDay,
+              lastDate: lastDay,
+              initialDateRange: range,
+              helpText: 'Select export range',
+            );
+            if (picked != null) {
+              setSheetState(() => range = picked);
+            }
+          }
+
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.8,
+            minChildSize: 0.5,
+            maxChildSize: 0.95,
+            builder: (context, scrollController) => ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        _runDietExport(sheetContext, summary, 'csv'),
-                    icon: const Icon(Icons.table_view, size: 16),
-                    label: Text(
-                      'Export as CSV',
-                      style: GoogleFonts.spaceGrotesk(
-                        fontWeight: FontWeight.bold,
-                      ),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        _runDietExport(sheetContext, summary, 'pdf'),
-                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-                    label: Text(
-                      'Export as PDF',
-                      style: GoogleFonts.spaceGrotesk(
-                        fontWeight: FontWeight.bold,
+                const SizedBox(height: 16),
+                Text(
+                  'DIET SUMMARY',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textWhite,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  summary.scope,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: AppColors.textSlate,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Date selector for the daily breakdown and exports.
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('All time'),
+                      selected: range == null,
+                      onSelected: (_) => setSheetState(() => range = null),
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.date_range, size: 15),
+                      label: Text(
+                        range == null
+                            ? 'Select days'
+                            : '${range!.start.day}/${range!.start.month} - '
+                                  '${range!.end.day}/${range!.end.month}',
+                      ),
+                      onPressed: pickRange,
+                    ),
+                    ActionChip(
+                      label: const Text('Last 7 days'),
+                      onPressed: () => applyLastDays(7),
+                    ),
+                    ActionChip(
+                      label: const Text('Last 30 days'),
+                      onPressed: () => applyLastDays(30),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 2.1,
+                  children: [
+                    _summaryMetric(
+                      Icons.local_fire_department,
+                      'Calories',
+                      '${summary.totalCalories} kcal',
+                      AppColors.primaryOrange,
+                    ),
+                    _summaryMetric(
+                      Icons.water_drop_outlined,
+                      'Water',
+                      '${summary.totalWaterMl} ml',
+                      AppColors.emerald,
+                    ),
+                    _summaryMetric(
+                      Icons.bedtime_outlined,
+                      'Sleep',
+                      _formatSleep(summary.totalSleepMinutes),
+                      AppColors.primaryOrange,
+                    ),
+                    _summaryMetric(
+                      Icons.event_available_outlined,
+                      'Days at 50%+',
+                      '${summary.daysGoalMet}/${summary.days.length}',
+                      AppColors.rose,
+                    ),
+                    _summaryMetric(
+                      Icons.restaurant_menu,
+                      'Food logs',
+                      '${summary.foodCount}',
+                      AppColors.primaryOrange,
+                    ),
+                    _summaryMetric(
+                      Icons.check_circle_outline,
+                      'Activities',
+                      '${summary.totalActivities}',
+                      AppColors.emerald,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _sectionLabel('DAILY BREAKDOWN'),
+                const SizedBox(height: 8),
+                if (summary.days.isEmpty)
+                  Text(
+                    'No activities logged in this range.',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppColors.textSlate,
+                    ),
+                  )
+                else
+                  ...summary.days.map(_buildSummaryDayRow),
+                const SizedBox(height: 18),
+                _sectionLabel('NUTRIENTS IN RANGE'),
+                const SizedBox(height: 8),
+                NutrientBarChart(
+                  breakdown: nutrients,
+                  emptyLabel: 'No analysed foods saved in this range.',
+                  barColor: AppColors.emerald,
+                ),
+                const SizedBox(height: 14),
+                _sectionLabel('MAJOR CONTRIBUTOR FOODS'),
+                const SizedBox(height: 8),
+                NutrientContributorList(breakdown: nutrients),
+                const SizedBox(height: 18),
+                _sectionLabel('EXPORT'),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            _runDietExport(sheetContext, summary, 'csv'),
+                        icon: const Icon(Icons.table_view, size: 16),
+                        label: Text(
+                          'Export as CSV',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            _runDietExport(sheetContext, summary, 'pdf'),
+                        icon: const Icon(
+                          Icons.picture_as_pdf_outlined,
+                          size: 16,
+                        ),
+                        label: Text(
+                          'Export as PDF',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

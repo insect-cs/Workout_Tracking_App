@@ -14,6 +14,7 @@ class PoseKeypointSnapshot {
     required this.x,
     required this.y,
     required this.confidence,
+    this.z = 0.0,
   });
 
   final String name;
@@ -21,11 +22,15 @@ class PoseKeypointSnapshot {
   final double y;
   final double confidence;
 
+  /// Signed relative depth normalized by frame width. Zero when unavailable.
+  final double z;
+
   Map<String, dynamic> toJson() => {
     'name': name,
     'x': x,
     'y': y,
     'confidence': confidence,
+    'z': z,
   };
 
   factory PoseKeypointSnapshot.fromJson(Map<String, dynamic> json) =>
@@ -34,14 +39,17 @@ class PoseKeypointSnapshot {
         x: (json['x'] as num?)?.toDouble() ?? 0,
         y: (json['y'] as num?)?.toDouble() ?? 0,
         confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
+        z: (json['z'] as num?)?.toDouble() ?? 0,
       );
 }
 
 /// One skeleton sampled from the live camera while a replay video was recording.
 ///
 /// To keep history JSON small, only the 13 landmarks drawn by
-/// [PoseSkeletonPainter] are stored, in this fixed order. Each point is three
-/// integers: x and y quantised to 0..1000, confidence to 0..100. [tMs] is the
+/// [PoseSkeletonPainter] are stored, in this fixed order. New frames store four
+/// integers per point: x and y quantised to 0..1000, signed depth quantised
+/// to -1000..1000, and confidence to 0..100. Legacy frames with three values
+/// per point (no depth) are still read and decoded as `z == 0`. [tMs] is the
 /// position in the recorded video, in milliseconds.
 class PoseReplayFrame {
   static const List<String> landmarkNames = <String>[
@@ -61,16 +69,22 @@ class PoseReplayFrame {
   ];
 
   static const int _positionScale = 1000;
+  static const int _depthScale = 1000;
   static const int _confidenceScale = 100;
-  static const int _valuesPerPoint = 3;
+  static const int _minVisibleConfidence = 12;
+  static const int _valuesPerPoint = 4;
+  static const int _legacyValuesPerPoint = 3;
   static final int _encodedLength = landmarkNames.length * _valuesPerPoint;
+  static final int _legacyEncodedLength =
+      landmarkNames.length * _legacyValuesPerPoint;
 
   const PoseReplayFrame({required this.tMs, required this.values});
 
   /// Milliseconds from the start of the recorded video.
   final int tMs;
 
-  /// Flat `[x, y, confidence, ...]` triples in [landmarkNames] order.
+  /// Flat `[x, y, z, confidence, ...]` quads in [landmarkNames] order. Older
+  /// sessions may still hold `[x, y, confidence, ...]` triples.
   final List<int> values;
 
   Map<String, dynamic> toJson() => {'t': tMs, 'p': values};
@@ -93,19 +107,25 @@ class PoseReplayFrame {
     for (final name in landmarkNames) {
       final point = byName[name];
       if (point == null) {
-        values.addAll(<int>[0, 0, 0]);
+        values.addAll(<int>[0, 0, 0, 0]);
         continue;
       }
       final confidence = (point.confidence * _confidenceScale)
           .round()
           .clamp(0, _confidenceScale)
           .toInt();
-      if (confidence > 30) hasVisiblePoint = true;
+      if (confidence > _minVisibleConfidence) hasVisiblePoint = true;
       values.add(
         (point.x * _positionScale).round().clamp(0, _positionScale).toInt(),
       );
       values.add(
         (point.y * _positionScale).round().clamp(0, _positionScale).toInt(),
+      );
+      values.add(
+        (point.z * _depthScale)
+            .round()
+            .clamp(-_depthScale, _depthScale)
+            .toInt(),
       );
       values.add(confidence);
     }
@@ -114,21 +134,27 @@ class PoseReplayFrame {
     return PoseReplayFrame(tMs: tMs, values: values);
   }
 
-  /// Reads older/malformed frames defensively; invalid frames are skipped.
+  /// Reads new and legacy frames defensively; invalid frames are skipped.
   static PoseReplayFrame? tryFromJson(Map<String, dynamic> json) {
     final tMs = (json['t'] as num?)?.toInt();
     final raw = json['p'] as List<dynamic>?;
-    if (tMs == null || tMs < 0 || raw == null || raw.length != _encodedLength) {
-      return null;
-    }
+    if (tMs == null || tMs < 0 || raw == null) return null;
 
+    final legacy = raw.length == _legacyEncodedLength;
+    if (raw.length != _encodedLength && !legacy) return null;
+
+    final perPoint = legacy ? _legacyValuesPerPoint : _valuesPerPoint;
     final values = <int>[];
-    for (var index = 0; index < raw.length; index++) {
-      final value = (raw[index] as num?)?.toInt() ?? 0;
-      final max = index % _valuesPerPoint == 2
-          ? _confidenceScale
-          : _positionScale;
-      values.add(value.clamp(0, max).toInt());
+    for (var point = 0; point < landmarkNames.length; point++) {
+      final base = point * perPoint;
+      final x = (raw[base] as num?)?.toInt() ?? 0;
+      final y = (raw[base + 1] as num?)?.toInt() ?? 0;
+      final z = legacy ? 0 : ((raw[base + 2] as num?)?.toInt() ?? 0);
+      final confidence = (raw[base + perPoint - 1] as num?)?.toInt() ?? 0;
+      values.add(x.clamp(0, _positionScale).toInt());
+      values.add(y.clamp(0, _positionScale).toInt());
+      values.add(z.clamp(-_depthScale, _depthScale).toInt());
+      values.add(confidence.clamp(0, _confidenceScale).toInt());
     }
     return PoseReplayFrame(tMs: tMs, values: values);
   }
@@ -138,14 +164,21 @@ class PoseReplayFrame {
   /// Live front-camera keypoints are mirrored to match the preview, while the
   /// saved recording contains the raw camera frames. Set [unmirrorX] when
   /// replaying such a session so the skeleton lines up with the video.
-  List<PoseKeypoint> toPoseKeypoints({bool unmirrorX = false}) {
-    if (values.length != _encodedLength) return const <PoseKeypoint>[];
+  List<PoseKeypoint> toPoseKeypoints({
+    bool unmirrorX = false,
+    double minConfidence = 0.3,
+  }) {
+    final legacy = values.length == _legacyEncodedLength;
+    if (values.length != _encodedLength && !legacy) {
+      return const <PoseKeypoint>[];
+    }
+    final perPoint = legacy ? _legacyValuesPerPoint : _valuesPerPoint;
 
     final keypoints = <PoseKeypoint>[];
     for (var index = 0; index < landmarkNames.length; index++) {
-      final base = index * _valuesPerPoint;
-      final confidence = values[base + 2] / _confidenceScale;
-      if (confidence <= 0.3) continue;
+      final base = index * perPoint;
+      final confidence = values[base + perPoint - 1] / _confidenceScale;
+      if (confidence < minConfidence) continue;
       final x = values[base] / _positionScale;
       keypoints.add(
         PoseKeypoint(
@@ -153,6 +186,7 @@ class PoseReplayFrame {
           x: unmirrorX ? 1 - x : x,
           y: values[base + 1] / _positionScale,
           confidence: confidence,
+          z: legacy ? 0.0 : values[base + 2] / _depthScale,
         ),
       );
     }
@@ -195,6 +229,7 @@ class LiveTrackingSession {
     required this.squatCount,
     required this.curlCount,
     required this.pushupCount,
+    this.coreCount = 0,
     required this.kneeAngle,
     required this.elbowAngle,
     required this.minKneeAngle,
@@ -208,6 +243,7 @@ class LiveTrackingSession {
     this.videoMimeType,
     this.poseFrames = const <PoseReplayFrame>[],
     this.landmarksMirroredX = false,
+    this.streamRotationDegrees = 0,
   });
 
   final String id;
@@ -218,6 +254,7 @@ class LiveTrackingSession {
   final int squatCount;
   final int curlCount;
   final int pushupCount;
+  final int coreCount;
   final double? kneeAngle;
   final double? elbowAngle;
   final double? minKneeAngle;
@@ -243,6 +280,12 @@ class LiveTrackingSession {
   /// must be flipped back to align with the raw recorded video.
   final bool landmarksMirroredX;
 
+  /// Clockwise rotation applied to drawn skeletons so they sit on the subject
+  /// in the rotated live video and replay. The saved MP4 carries its own
+  /// rotation (applied by `video_player`); this is the per-lens offset between
+  /// the detector's upright frame and that displayed video.
+  final int streamRotationDegrees;
+
   bool get hasVideo =>
       (videoPath != null && videoPath!.isNotEmpty) ||
       (videoBase64 != null && videoBase64!.isNotEmpty);
@@ -254,7 +297,8 @@ class LiveTrackingSession {
       repCount == 0 &&
       squatCount == 0 &&
       curlCount == 0 &&
-      pushupCount == 0;
+      pushupCount == 0 &&
+      coreCount == 0;
 
   Duration get duration => endedAt.difference(startedAt);
 
@@ -275,6 +319,7 @@ class LiveTrackingSession {
     'squatCount': squatCount,
     'curlCount': curlCount,
     'pushupCount': pushupCount,
+    'coreCount': coreCount,
     'kneeAngle': kneeAngle,
     'elbowAngle': elbowAngle,
     'minKneeAngle': minKneeAngle,
@@ -288,6 +333,7 @@ class LiveTrackingSession {
     'videoMimeType': videoMimeType,
     'poseFrames': poseFrames.map((frame) => frame.toJson()).toList(),
     'landmarksMirroredX': landmarksMirroredX,
+    'streamRotationDegrees': streamRotationDegrees,
   };
 
   factory LiveTrackingSession.fromJson(Map<String, dynamic> json) {
@@ -300,6 +346,11 @@ class LiveTrackingSession {
         if (frame != null) poseFrames.add(frame);
       }
     }
+
+    // Sessions saved by the earlier 180-degree build used a boolean flag.
+    final rotationDegrees =
+        (json['streamRotationDegrees'] as num?)?.toInt() ??
+        (((json['streamRotated180'] as bool?) ?? false) ? 180 : 0);
 
     return LiveTrackingSession(
       id: (json['id'] as String?) ?? '',
@@ -314,6 +365,7 @@ class LiveTrackingSession {
       squatCount: (json['squatCount'] as num?)?.toInt() ?? 0,
       curlCount: (json['curlCount'] as num?)?.toInt() ?? 0,
       pushupCount: (json['pushupCount'] as num?)?.toInt() ?? 0,
+      coreCount: (json['coreCount'] as num?)?.toInt() ?? 0,
       kneeAngle: (json['kneeAngle'] as num?)?.toDouble(),
       elbowAngle: (json['elbowAngle'] as num?)?.toDouble(),
       minKneeAngle: (json['minKneeAngle'] as num?)?.toDouble(),
@@ -332,6 +384,7 @@ class LiveTrackingSession {
       videoMimeType: json['videoMimeType'] as String?,
       poseFrames: poseFrames,
       landmarksMirroredX: json['landmarksMirroredX'] as bool? ?? false,
+      streamRotationDegrees: rotationDegrees,
     );
   }
 }

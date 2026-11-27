@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -10,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import 'api_key_service.dart';
+import 'pose_movenet.dart';
 
 class PoseAnalysisResult {
   final String exerciseName;
@@ -19,7 +21,8 @@ class PoseAnalysisResult {
   final List<String> formTips;
   final String musclesWorked;
   final List<PoseKeypoint> detectedKeypoints;
-  final String engineUsed; // 'ML Kit' or 'Gemini AI Vision'
+  final String
+  engineUsed; // e.g. 'MoveNet + ML Kit depth' or 'Gemini AI Vision'
 
   const PoseAnalysisResult({
     required this.exerciseName,
@@ -39,20 +42,87 @@ class PoseKeypoint {
   final double y; // 0.0 to 1.0 normalized
   final double confidence;
 
+  /// Signed depth relative to the camera frame width. Negative values are
+  /// closer to the camera, positive values are farther away, and 0 means
+  /// unavailable or at the depth origin. MoveNet is 2D, so Android live frames
+  /// carry this only when the low-frequency depth sampler has supplied it.
+  final double z;
+
   const PoseKeypoint({
     required this.name,
     required this.x,
     required this.y,
     required this.confidence,
+    this.z = 0.0,
   });
+
+  PoseKeypoint copyWith({double? z}) => PoseKeypoint(
+    name: name,
+    x: x,
+    y: y,
+    confidence: confidence,
+    z: z ?? this.z,
+  );
 }
 
 class PoseAnalysisService {
+  /// Rotates normalized keypoints clockwise by [degrees] for a display-only
+  /// stream flip. Joint angles are invariant under rotation, so counters and
+  /// classification keep using the detector's original coordinates.
+  static List<PoseKeypoint> rotateStream(
+    List<PoseKeypoint> keypoints,
+    int degrees,
+  ) {
+    final turn = ((degrees % 360) + 360) % 360;
+    if (turn == 0) return keypoints;
+
+    return keypoints
+        .map((point) {
+          final x = switch (turn) {
+            90 => 1 - point.y,
+            180 => 1 - point.x,
+            270 => point.y,
+            _ => point.x,
+          };
+          final y = switch (turn) {
+            90 => point.x,
+            180 => 1 - point.y,
+            270 => 1 - point.x,
+            _ => point.y,
+          };
+          return PoseKeypoint(
+            name: point.name,
+            x: x,
+            y: y,
+            confidence: point.confidence,
+            z: point.z,
+          );
+        })
+        .toList(growable: false);
+  }
+
   /// Last error reported by the native detector. The live-tracking UI shows
   /// this instead of silently claiming "no person detected", which used to
   /// hide frame-format / detector failures completely.
   static String? _lastNativeDetectionError;
   static String? get lastNativeDetectionError => _lastNativeDetectionError;
+
+  /// Diagnostics from the Android MoveNet engine, shown in the live overlay so
+  /// a low-confidence pose can be distinguished from a stalled frame stream.
+  static double? get lastMoveNetPoseScore => PoseMoveNetService.lastPoseScore;
+  static double? get lastMoveNetMaxKeypointScore =>
+      PoseMoveNetService.lastMaxKeypointScore;
+  static int? get lastMoveNetKeypointsAboveCropThreshold =>
+      PoseMoveNetService.lastKeypointsAboveCropThreshold;
+  static int? get lastMoveNetRotation => PoseMoveNetService.lastRotation;
+  static int? get lastMoveNetEmptyFrameCount =>
+      PoseMoveNetService.lastEmptyFrameCount;
+  static String? get lastMoveNetInputFormat =>
+      PoseMoveNetService.lastInputFormat;
+  static bool? get lastMoveNetOutputHasSignal =>
+      PoseMoveNetService.lastOutputHasSignal;
+  static String? get lastMoveNetDiagnostics =>
+      PoseMoveNetService.lastDiagnostics;
 
   // CameraX reports a sensor orientation that does not always match the
   // rotation of the frames it delivers (notably on newer Android devices).
@@ -93,24 +163,45 @@ class PoseAnalysisService {
     return _streamingPoseDetector!;
   }
 
-  /// Builds the tightly packed NV21 InputImage ML Kit expects on Android.
-  /// CameraX can deliver padded NV21 data or three YUV_420_888 planes, and ML
-  /// Kit rejects any buffer whose size does not exactly match the dimensions.
-  static InputImage? _androidInputImageFromCameraFrame(
-    CameraImage image,
-    InputImageRotation rotation,
-  ) {
-    final nv21 = packedNv21FromCameraImage(image);
-    if (nv21 == null) return null;
-    return InputImage.fromBytes(
-      bytes: nv21,
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: InputImageFormat.nv21,
-        bytesPerRow: image.width,
-      ),
-    );
+  // MoveNet stays the live detector on Android because it is smooth and
+  // accurate. ML Kit is sampled at a low rate only to supply the experimental
+  // relative z value that MoveNet cannot produce. Its result is cached and
+  // merged into the next MoveNet skeletons so the visible stream never waits
+  // for the second detector.
+  static const Duration _depthSampleInterval = Duration(milliseconds: 250);
+  static DateTime? _lastDepthSampleAt;
+  static bool _depthSampleInFlight = false;
+  static int _depthSession = 0;
+  static final Map<String, double> _latestDepthByLandmark = <String, double>{};
+
+  /// MoveNet supplies x/y every frame but depth is only sampled four times a
+  /// second. Smoothing per joint turns those steps into a continuous stream so
+  /// the 3D viewport does not pop. The first sample is used as-is; later ones
+  /// converge with this alpha.
+  static const double _depthSmoothingAlpha = 0.25;
+  static final Map<String, double> _smoothedDepthByLandmark =
+      <String, double>{};
+
+  /// Applies the same per-joint low-pass to detectors that already emit z on
+  /// every frame (iOS ML Kit), keeping live 2D and 3D overlays consistent.
+  @visibleForTesting
+  static List<PoseKeypoint> smoothLiveDepth(List<PoseKeypoint> keypoints) {
+    var changed = false;
+    final result = keypoints
+        .map((point) {
+          final previous = _smoothedDepthByLandmark[point.name];
+          if (previous == null) {
+            _smoothedDepthByLandmark[point.name] = point.z;
+            return point;
+          }
+          final smoothed =
+              previous + _depthSmoothingAlpha * (point.z - previous);
+          _smoothedDepthByLandmark[point.name] = smoothed;
+          changed = true;
+          return point.copyWith(z: smoothed);
+        })
+        .toList(growable: false);
+    return changed ? result : keypoints;
   }
 
   /// Detects pose landmarks from a live camera frame in real time.
@@ -123,6 +214,31 @@ class PoseAnalysisService {
     bool mirrorX = false,
   }) async {
     _lastNativeDetectionError = null;
+
+    // Android keeps MoveNet as the live detector. ML Kit is sampled in the
+    // background at a low rate only for relative depth, never as a fallback
+    // for x/y tracking. If MoveNet fails, tracking stays empty.
+    if (Platform.isAndroid) {
+      final moveNetKeypoints = await PoseMoveNetService.detectFromCameraImage(
+        image,
+        camera: camera,
+        mirrorX: mirrorX,
+      );
+      final moveNetError = PoseMoveNetService.lastError;
+      if (moveNetError != null) {
+        _lastNativeDetectionError = moveNetError;
+        debugPrint('[Pose] MoveNet error: $moveNetError');
+      }
+      if (moveNetKeypoints == null) {
+        _emptyFrameCount++;
+        _latestDepthByLandmark.clear();
+        return null;
+      }
+      _emptyFrameCount = 0;
+      _requestDepthSample(image, camera);
+      return applyDepthToKeypoints(moveNetKeypoints);
+    }
+
     try {
       final sensorRotation =
           InputImageRotationValue.fromRawValue(camera.sensorOrientation) ??
@@ -140,26 +256,16 @@ class PoseAnalysisService {
         _rotationProbeIndex++;
       }
 
-      final inputImage = Platform.isAndroid
-          ? _androidInputImageFromCameraFrame(image, rotation)
-          : InputImage.fromBytes(
-              bytes: image.planes.first.bytes,
-              metadata: InputImageMetadata(
-                size: Size(image.width.toDouble(), image.height.toDouble()),
-                rotation: rotation,
-                format: InputImageFormat.bgra8888,
-                bytesPerRow: image.planes.first.bytesPerRow,
-              ),
-            );
-
-      if (inputImage == null) {
-        _lastNativeDetectionError ??=
-            'Unsupported camera frame '
-            '(${image.width}x${image.height}, '
-            '${image.planes.length} plane(s), format ${image.format.raw})';
-        debugPrint('ML Kit frame error: $_lastNativeDetectionError');
-        return null;
-      }
+      // Only iOS reaches this block; Android returns from MoveNet above.
+      final inputImage = InputImage.fromBytes(
+        bytes: image.planes.first.bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: InputImageFormat.bgra8888,
+          bytesPerRow: image.planes.first.bytesPerRow,
+        ),
+      );
 
       List<Pose> poses = const [];
       try {
@@ -212,11 +318,14 @@ class PoseAnalysisService {
             x: normX.clamp(0.0, 1.0),
             y: normY.clamp(0.0, 1.0),
             confidence: lm.likelihood,
+            z: frameSize.width > 0
+                ? (lm.z / frameSize.width).clamp(-1.0, 1.0)
+                : 0.0,
           ),
         );
       });
 
-      return keypoints;
+      return smoothLiveDepth(keypoints);
     } catch (e) {
       _lastNativeDetectionError = e.toString();
       debugPrint('ML Kit streaming pose detection error: $e');
@@ -224,16 +333,136 @@ class PoseAnalysisService {
     }
   }
 
+  /// Requests an ML Kit depth sample without blocking the MoveNet stream. Only
+  /// one sample is ever in flight, and samples are throttled to four per second.
+  static void _requestDepthSample(CameraImage image, CameraDescription camera) {
+    final now = DateTime.now();
+    final last = _lastDepthSampleAt;
+    if (_depthSampleInFlight ||
+        (last != null && now.difference(last) < _depthSampleInterval)) {
+      return;
+    }
+    _lastDepthSampleAt = now;
+    _depthSampleInFlight = true;
+    final session = _depthSession;
+    unawaited(
+      _sampleDepth(image, camera, session).whenComplete(() {
+        _depthSampleInFlight = false;
+      }),
+    );
+  }
+
+  static Future<void> _sampleDepth(
+    CameraImage image,
+    CameraDescription camera,
+    int session,
+  ) async {
+    try {
+      final nv21 = packedNv21FromCameraImage(image);
+      if (nv21 == null) return;
+
+      final rotation =
+          InputImageRotationValue.fromRawValue(camera.sensorOrientation) ??
+          InputImageRotation.rotation0deg;
+      final inputImage = InputImage.fromBytes(
+        bytes: nv21,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: InputImageFormat.nv21,
+          bytesPerRow: image.width,
+        ),
+      );
+
+      final poses = await streamingDetector.processImage(inputImage);
+      if (poses.isEmpty) return;
+
+      final frameWidth = poseFrameSize(
+        image.width,
+        image.height,
+        rotation,
+      ).width;
+      if (frameWidth <= 0) return;
+
+      final depths = depthByNameFromLandmarks(
+        poses.first.landmarks,
+        frameWidth,
+      );
+      if (depths.isEmpty || session != _depthSession) return;
+      _latestDepthByLandmark
+        ..clear()
+        ..addAll(depths);
+    } catch (e) {
+      // Depth is supplementary. Never surface this as a tracking failure: the
+      // smooth MoveNet x/y stream is still valid without it.
+      debugPrint('[Pose] depth sample skipped: $e');
+    }
+  }
+
+  /// Normalizes ML Kit's experimental z values by the frame width and maps
+  /// them onto the app's landmark names. Negative values are toward the camera.
+  @visibleForTesting
+  static Map<String, double> depthByNameFromLandmarks(
+    Map<PoseLandmarkType, PoseLandmark> landmarks,
+    double frameWidth,
+  ) {
+    if (frameWidth <= 0) return const <String, double>{};
+    final depths = <String, double>{};
+    landmarks.forEach((type, landmark) {
+      final z = landmark.z / frameWidth;
+      if (z.isFinite) {
+        depths[_landmarkTypeName(type)] = z.clamp(-1.0, 1.0);
+      }
+    });
+    return depths;
+  }
+
+  /// Copies the cached depth onto MoveNet keypoints by landmark name, applying
+  /// the per-joint low-pass so the 4 Hz depth samples do not step visibly.
+  /// Keypoints without a depth sample keep `z == 0` instead of reusing another
+  /// body part.
+  @visibleForTesting
+  static List<PoseKeypoint> applyDepthToKeypoints(
+    List<PoseKeypoint> keypoints, {
+    Map<String, double>? depthByName,
+  }) {
+    final depths = depthByName ?? _latestDepthByLandmark;
+    if (depths.isEmpty) return keypoints;
+
+    var changed = false;
+    final merged = keypoints
+        .map((point) {
+          final depth = depths[point.name];
+          if (depth == null) return point;
+          final previous = _smoothedDepthByLandmark[point.name];
+          final smoothed = previous == null
+              ? depth
+              : previous + _depthSmoothingAlpha * (depth - previous);
+          _smoothedDepthByLandmark[point.name] = smoothed;
+          changed = true;
+          return point.copyWith(z: smoothed);
+        })
+        .toList(growable: false);
+    return changed ? merged : keypoints;
+  }
+
   /// Clears per-session live tracking heuristics. Call when a new live camera
   /// session starts so a rotation learned from a previous camera is not reused.
   static void resetLiveTracking() {
+    _depthSession++;
     _preferredRotation = null;
     _emptyFrameCount = 0;
     _rotationProbeIndex = 0;
     _lastNativeDetectionError = null;
+    _lastDepthSampleAt = null;
+    _depthSampleInFlight = false;
+    _latestDepthByLandmark.clear();
+    _smoothedDepthByLandmark.clear();
+    PoseMoveNetService.reset();
   }
 
   static void dispose() {
+    PoseMoveNetService.dispose();
     _mlkitPoseDetector?.close();
     _mlkitPoseDetector = null;
     _streamingPoseDetector?.close();
@@ -278,6 +507,9 @@ class PoseAnalysisService {
       final width = (maxX - minX).abs();
       final height = (maxY - minY).abs();
 
+      // ML Kit's z is in image pixels like x/y. Normalize by the visible body
+      // width here because static-image analysis does not carry frame metadata.
+      final depthScale = width > 0 ? width : 1.0;
       landmarks.forEach((type, landmark) {
         final normX = width > 0
             ? ((landmark.x - minX) / width).clamp(0.05, 0.95)
@@ -292,6 +524,7 @@ class PoseAnalysisService {
             x: normX,
             y: normY,
             confidence: landmark.likelihood,
+            z: (landmark.z / depthScale).clamp(-1.0, 1.0),
           ),
         );
       });
@@ -393,6 +626,9 @@ class PoseAnalysisService {
             x: normX.clamp(0.0, 1.0),
             y: normY.clamp(0.0, 1.0),
             confidence: landmark.likelihood,
+            z: frameWidth > 0
+                ? (landmark.z / frameWidth).clamp(-1.0, 1.0)
+                : 0.0,
           ),
         );
       });
@@ -523,6 +759,7 @@ Return ONLY valid JSON (no markdown, no backticks):
           x: (k['x'] as num?)?.toDouble() ?? 0.5,
           y: (k['y'] as num?)?.toDouble() ?? 0.5,
           confidence: (k['confidence'] as num?)?.toDouble() ?? 0.0,
+          z: (k['z'] as num?)?.toDouble() ?? 0.0,
         );
       }).toList();
     }
@@ -584,14 +821,13 @@ Return ONLY valid JSON (no markdown, no backticks):
   }
 }
 
-/// Packs a camera frame into a tightly sized NV21 byte array that ML Kit will
-/// accept (`width * height * 3 / 2` bytes exactly).
+/// Packs a camera frame into a tightly sized NV21 byte array (`width *
+/// height * 3 / 2` bytes exactly) for the native pose detectors.
 ///
 /// `camera_android_camerax` either returns one already-NV21 plane (sometimes
 /// overallocated because the Y plane has a padded row stride), or three
 /// YUV_420_888 planes when NV21 output is unavailable on the device. Both are
 /// handled here. Returns null when the frame cannot be converted safely.
-@visibleForTesting
 Uint8List? packedNv21FromCameraImage(CameraImage image) {
   final width = image.width;
   final height = image.height;

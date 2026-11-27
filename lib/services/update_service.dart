@@ -38,7 +38,10 @@ abstract final class UpdateService {
   static const String repo = 'Workout_Tracking_App';
 
   /// Keep in sync with `version:` in `pubspec.yaml` (build number excluded).
-  static const String currentVersion = '1.1.0';
+  /// This used to lag behind the released APK, so a v1.2.0 build kept offering
+  /// the same v1.2.0 release as an update. `update_service_test.dart` now
+  /// asserts this value matches pubspec.yaml.
+  static const String currentVersion = '1.3.0';
 
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
   static const String _latestReleaseApi =

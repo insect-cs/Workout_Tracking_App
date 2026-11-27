@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:workout_app/screens/home_screen.dart';
+import 'package:workout_app/screens/login_screen.dart';
 import 'package:workout_app/services/local_store.dart';
-import 'package:workout_app/state/workout_state.dart';
+import 'package:workout_app/services/update_service.dart';
 import 'package:workout_app/theme/app_theme.dart';
 import 'package:workout_app/theme/theme_controller.dart';
 
@@ -74,34 +74,33 @@ void main() {
     }
   });
 
-  testWidgets('the Home palette button changes the active scheme', (
+  testWidgets('the login palette button changes the active scheme', (
     tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
-        home: HomeScreen(
-          state: WorkoutState(),
-          onTabChange: (_) {},
-          onNavigateToInput: (_) {},
-          onOpenDiet: () {},
-          onOpenKeys: () {},
+        home: LoginScreen(
+          updateChecker: () async => const AppUpdate(
+            latestVersion: '1.2.0',
+            releaseName: '',
+            releaseNotes: '',
+            releaseUrl: 'https://github.com/x/releases',
+            apkUrl: null,
+            isNewer: false,
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
     final before = ThemeController.paletteName.value;
-    expect(find.byTooltip('Auto color scheme'), findsOneWidget);
+    expect(find.byKey(const Key('login-palette')), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Auto color scheme'));
+    await tester.tap(find.byKey(const Key('login-palette')));
     await tester.pumpAndSettle();
 
     expect(ThemeController.paletteName.value, isNot(before));
-    expect(
-      find.text('Palette: ${ThemeController.paletteName.value}'),
-      findsOneWidget,
-    );
   });
 }

@@ -33,7 +33,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _searchQuery = '';
   String _selectedCategory = 'All';
-  double _paletteTurns = 0;
   final TextEditingController _searchController = TextEditingController();
 
   final List<String> _categories = [
@@ -51,11 +50,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
-
-  void _choosePalette() {
-    ThemeController.chooseNextPalette();
-    setState(() => _paletteTurns += 1);
   }
 
   @override
@@ -138,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        border: Border(bottom: BorderSide(color: Color(0x3320293A))),
+        border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -195,50 +189,17 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
 
-          // Title + active palette name
+          // App title. Palette selection now lives on the login gate, so the
+          // Home header only shows the brand and the theme toggle.
           Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'WORKOUT TRACKING',
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                    color: AppColors.textWhite,
-                  ),
-                ),
-                ValueListenableBuilder<String>(
-                  valueListenable: ThemeController.paletteName,
-                  builder: (context, paletteName, _) => Text(
-                    'Palette: $paletteName',
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primaryOrange,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Automatic colour scheme (animated)
-          AnimatedRotation(
-            turns: _paletteTurns,
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeInOutCubic,
-            child: IconButton(
-              onPressed: _choosePalette,
-              tooltip: 'Auto color scheme',
-              icon: Icon(
-                Icons.palette_outlined,
-                color: AppColors.primaryOrange,
-                size: 21,
+            child: Text(
+              'WORKOUT TRACKING',
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+                color: AppColors.textWhite,
               ),
             ),
           ),
@@ -276,12 +237,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
 
           // Sign out returns to the login gate but keeps the session on disk
-          // until the delete icon there is used.
+          // until the delete icon there is used. Styled from the active palette
+          // like the other header actions instead of a fixed red.
           if (widget.onSignOut != null)
             IconButton(
               onPressed: widget.onSignOut,
               tooltip: 'Sign out',
-              icon: Icon(Icons.logout, color: AppColors.rose, size: 20),
+              icon: Icon(Icons.logout, color: AppColors.textLight, size: 20),
             ),
         ],
       ),

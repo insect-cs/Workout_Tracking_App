@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/update_service.dart';
 import '../state/session_state.dart';
 import '../theme/app_colors.dart';
+import '../theme/theme_controller.dart';
 import 'name_entry_screen.dart';
 import '../widgets/app_dialog.dart';
 
@@ -31,14 +32,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   static const _wheelCooldown = Duration(milliseconds: 180);
   static const _swipeStep = 28.0;
-  static const _peach = Color(0xFFFFB899);
-  static const _selectedTitle = Color(0xFF2B1109);
-  static const _selectedSubtitle = Color(0xFF5A2A14);
 
   /// Highlighted session card: 0 = guest, 1 = new user.
   int _selectedIndex = 0;
   DateTime _lastWheel = DateTime.fromMillisecondsSinceEpoch(0);
   double _dragAccum = 0;
+  double _paletteTurns = 0;
+
+  void _choosePalette() {
+    ThemeController.chooseNextPalette();
+    setState(() => _paletteTurns += 1);
+  }
 
   void _select(int index) {
     final next = index.clamp(0, 1);
@@ -119,6 +123,22 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Delete the saved session before starting another.'),
+        ),
+      );
+    }
+  }
+
+  /// Reopens the saved session without deleting it or creating a new profile.
+  Future<void> _resumeSession() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final resumed = await SessionState.resumeSession();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!resumed) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text('Could not restore the saved session. Try again.'),
         ),
       );
     }
@@ -315,8 +335,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                       size: 26,
                                     ),
                                   ),
+                                  const Spacer(),
+                                  AnimatedRotation(
+                                    turns: _paletteTurns,
+                                    duration: const Duration(milliseconds: 500),
+                                    curve: Curves.easeInOutCubic,
+                                    child: IconButton(
+                                      key: const Key('login-palette'),
+                                      onPressed: _busy ? null : _choosePalette,
+                                      tooltip: 'Auto color scheme',
+                                      icon: Icon(
+                                        Icons.palette_outlined,
+                                        color: AppColors.primaryOrange,
+                                        size: 21,
+                                      ),
+                                    ),
+                                  ),
                                   if (hasStaleSession && sessionKind != null)
-                                    Expanded(
+                                    Flexible(
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
@@ -456,7 +492,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       const SizedBox(width: 10),
                                       Expanded(
                                         child: Text(
-                                          'A ${_label(sessionKind ?? SessionKind.guest).toLowerCase()} is still saved. Use the delete icon to remove it before choosing another profile.',
+                                          'A ${_label(sessionKind ?? SessionKind.guest).toLowerCase()} is still saved. Resume it, or use the delete icon to remove it before choosing another profile.',
                                           style: GoogleFonts.inter(
                                             fontSize: 11,
                                             color: AppColors.textWhite,
@@ -465,6 +501,19 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ),
                                       ),
                                     ],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                FilledButton.icon(
+                                  key: const Key('resume-session'),
+                                  onPressed: _busy ? null : _resumeSession,
+                                  icon: const Icon(
+                                    Icons.play_circle_outline,
+                                    size: 18,
+                                  ),
+                                  label: const Text('Resume saved session'),
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(46),
                                   ),
                                 ),
                               ],
@@ -535,28 +584,19 @@ class _LoginScreenState extends State<LoginScreen> {
     bool outlined = false,
   }) {
     final enabled = onPressed != null;
-    // Dark ink on the peach fill keeps the highlighted guest card readable.
-    final titleColor = isSelected
-        ? _selectedTitle
-        : enabled
-        ? AppColors.textWhite
-        : AppColors.textLight;
-    final subColor = isSelected
-        ? _selectedSubtitle
+    // Both cards stay transparent and take their colour from the active
+    // palette. Selection is shown by the primary border, icon and scale rather
+    // than a hard-coded fill.
+    final titleColor = enabled ? AppColors.textWhite : AppColors.textMuted;
+    final subColor = enabled ? AppColors.textSlate : AppColors.textMuted;
+    final accent = isSelected
+        ? AppColors.primaryOrange
         : enabled
         ? AppColors.textSlate
         : AppColors.textMuted;
-    final accent = isSelected
-        ? _selectedTitle
-        : enabled
-        ? AppColors.primaryOrange
-        : AppColors.textMuted;
-    final fill = isSelected
-        ? _peach
-        : outlined
-        ? Colors.transparent
-        : AppColors.orangeSoft;
-    final border = isSelected ? _peach : AppColors.orangeBorder;
+    const fill = Colors.transparent;
+    final border = isSelected ? AppColors.primaryOrange : AppColors.border;
+    final borderWidth = isSelected ? 2.0 : 1.0;
 
     final content = AnimatedScale(
       scale: isSelected ? 1.02 : 1.0,
@@ -568,7 +608,7 @@ class _LoginScreenState extends State<LoginScreen> {
         decoration: BoxDecoration(
           color: fill,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: border, width: 1.5),
+          border: Border.all(color: border, width: borderWidth),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
@@ -579,10 +619,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 height: 44,
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? _selectedTitle.withValues(alpha: 0.08)
-                      : outlined
-                      ? AppColors.surfaceLow
-                      : AppColors.orangeSoft,
+                      ? AppColors.orangeSoft
+                      : AppColors.surfaceLow,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: accent),
                 ),

@@ -191,12 +191,19 @@ class DietState extends ChangeNotifier {
   }
 
   /// Snapshot of every activity recorded up to now, used by the summary UI
-  /// and its CSV/PDF exports.
-  DietSummary buildSummary(DateTime date) {
+  /// and its CSV/PDF exports. Pass [from]/[to] to export only a date range.
+  DietSummary buildSummary(DateTime date, {DateTime? from, DateTime? to}) {
     final now = DateTime.now();
-    final snapshots = daySnapshots
-        .where((item) => !item.date.isAfter(now))
-        .toList();
+    final start = from == null
+        ? null
+        : DateTime(from.year, from.month, from.day);
+    final end = to == null ? null : DateTime(to.year, to.month, to.day);
+    final snapshots = daySnapshots.where((item) {
+      if (item.date.isAfter(now)) return false;
+      if (start != null && item.date.isBefore(start)) return false;
+      if (end != null && item.date.isAfter(end)) return false;
+      return true;
+    }).toList();
     final days = snapshots
         .map((item) => DietSummaryDay.fromDietDay(item.date, item.day))
         .toList();
@@ -216,9 +223,13 @@ class DietState extends ChangeNotifier {
     });
 
     final goals = weekGoals(date);
+    final scope = start == null && end == null
+        ? 'All activities up to now'
+        : 'Activities ${_shortDate(start ?? end!)} - '
+              '${_shortDate(end ?? start!)}';
     return DietSummary(
       generatedAt: DateTime.now(),
-      scope: 'All activities up to now',
+      scope: scope,
       weekCalorieGoal: goals.calorieGoal,
       weekWaterGoalMl: goals.waterGoalMl,
       weekRestGoalMinutes: goals.restGoalMinutes,
@@ -226,6 +237,10 @@ class DietState extends ChangeNotifier {
       entries: entries,
     );
   }
+
+  static String _shortDate(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')}/'
+      '${date.month.toString().padLeft(2, '0')}/${date.year}';
 
   /// Test helper: clears all stored days and weekly goals.
   void reset() {

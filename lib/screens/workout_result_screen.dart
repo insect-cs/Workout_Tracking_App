@@ -67,22 +67,30 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
 
                                 // Section Title
                                 Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(
-                                      'Step-by-Step Instructions',
-                                      style: GoogleFonts.spaceGrotesk(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.textWhite,
+                                    Expanded(
+                                      child: Text(
+                                        'Step-by-Step Instructions',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.spaceGrotesk(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.textWhite,
+                                        ),
                                       ),
                                     ),
-                                    Text(
-                                      'Tap sets to log progress',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: AppColors.textSlate,
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        'Tap sets to log progress',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.end,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          color: AppColors.textSlate,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -291,51 +299,59 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
         border: Border(bottom: BorderSide(color: Color(0x3320293A))),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              InkWell(
-                onTap: widget.onBackToInput,
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLow,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Icon(
-                    Icons.arrow_back,
-                    color: AppColors.textLight,
-                    size: 18,
+          Expanded(
+            child: Row(
+              children: [
+                InkWell(
+                  onTap: widget.onBackToInput,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLow,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Icon(
+                      Icons.arrow_back,
+                      color: AppColors.textLight,
+                      size: 18,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Workout Result',
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textWhite,
-                    ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Workout Result',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textWhite,
+                        ),
+                      ),
+                      Text(
+                        'Screen 3 • Instructions & Volume',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: AppColors.textSlate,
+                        ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    'Screen 3 • Instructions & Volume',
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      color: AppColors.textSlate,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -396,15 +412,20 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'GENERATED ROUTINE',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                    color: AppColors.primaryOrange,
+                Expanded(
+                  child: Text(
+                    'GENERATED ROUTINE',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                      color: AppColors.primaryOrange,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -498,12 +519,16 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
             Icon(icon, color: AppColors.primaryOrange, size: 13),
             const SizedBox(width: 4),
           ],
-          Text(
-            text,
-            style: GoogleFonts.spaceGrotesk(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: textColor ?? AppColors.textWhite,
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: textColor ?? AppColors.textWhite,
+              ),
             ),
           ),
         ],
@@ -527,51 +552,59 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceHigh,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      stepNum,
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primaryOrange,
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceHigh,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        ex.name,
+                      alignment: Alignment.center,
+                      child: Text(
+                        stepNum,
                         style: GoogleFonts.spaceGrotesk(
-                          fontSize: 14,
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.textWhite,
+                          color: AppColors.primaryOrange,
                         ),
                       ),
-                      Text(
-                        '${ex.sets} • ${ex.reps}',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: AppColors.textSlate,
-                        ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            ex.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textWhite,
+                            ),
+                          ),
+                          Text(
+                            '${ex.sets} • ${ex.reps}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: AppColors.textSlate,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -865,19 +898,22 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.home, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Back to Home',
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.home, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Back to Home',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -895,19 +931,22 @@ class _WorkoutResultScreenState extends State<WorkoutResultScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.autorenew, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Regenerate',
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.autorenew, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Regenerate',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

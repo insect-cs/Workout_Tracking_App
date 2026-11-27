@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -7,6 +8,16 @@ import 'package:workout_app/services/update_service.dart';
 
 void main() {
   group('UpdateService version parsing', () {
+    test('currentVersion matches pubspec.yaml', () {
+      final pubspec = File('pubspec.yaml').readAsStringSync();
+      final match = RegExp(
+        r'^version:\s*([^\s+]+)',
+        multiLine: true,
+      ).firstMatch(pubspec);
+      expect(match, isNotNull, reason: 'pubspec.yaml should declare a version');
+      expect(match!.group(1), UpdateService.currentVersion);
+    });
+
     test('stripPrefix removes v and build metadata', () {
       expect(UpdateService.stripPrefix('v1.2.3'), '1.2.3');
       expect(UpdateService.stripPrefix('V2.0.1+42'), '2.0.1');
@@ -51,16 +62,16 @@ void main() {
       expect(update.apkUrl, 'https://github.com/x/app-release.apk');
     });
 
-    test('reports up to date when tags match', () async {
+    test('does not offer the installed version as an update', () async {
       final client = MockClient(
         (_) async => http.Response(
-          jsonEncode({'tag_name': 'v1.1.0', 'assets': []}),
+          jsonEncode({'tag_name': 'v1.2.0', 'assets': []}),
           200,
         ),
       );
 
       final update = await UpdateService.check(client: client);
-      expect(update.latestVersion, '1.1.0');
+      expect(update.latestVersion, '1.2.0');
       expect(update.isNewer, isFalse);
       expect(update.apkUrl, isNull);
       expect(update.releaseUrl, UpdateService.releasesPage);

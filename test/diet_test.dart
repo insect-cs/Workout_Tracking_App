@@ -344,12 +344,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Export as CSV'), findsOneWidget);
     expect(find.text('Export as PDF'), findsOneWidget);
+    expect(find.text('All time'), findsOneWidget);
+    expect(find.text('Select days'), findsOneWidget);
+    expect(find.text('Last 7 days'), findsOneWidget);
     final sheetContext = tester.element(find.text('Export as CSV'));
     Navigator.of(sheetContext).pop();
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('23:00'));
     await tester.pumpAndSettle();
+
+    // The tapped slot gets an unmistakable selected state and a banner.
+    expect(find.byKey(const Key('slot-selection-banner')), findsOneWidget);
+    expect(find.textContaining('Selected 23:00'), findsOneWidget);
 
     // Idle slots are marked red via semantics; the food editor offers all
     // four quantity units.

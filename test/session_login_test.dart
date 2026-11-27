@@ -9,6 +9,7 @@ import 'package:workout_app/services/local_store.dart';
 import 'package:workout_app/services/update_service.dart';
 import 'package:workout_app/state/session_state.dart';
 import 'package:workout_app/state/workout_state.dart';
+import 'package:workout_app/theme/app_colors.dart';
 import 'package:workout_app/theme/theme_controller.dart';
 
 void main() {
@@ -85,6 +86,31 @@ void main() {
           .onPressed,
       isNull,
     );
+  });
+
+  testWidgets('a saved session can be resumed without creating a new one', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('Continue as guest'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Sign out'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('resume-session')), findsOneWidget);
+    expect(SessionState.hasSession, isTrue);
+    expect(SessionState.isSignedIn, isFalse);
+    expect(SessionState.canSignIn, isFalse);
+
+    await tester.tap(find.byKey(const Key('resume-session')));
+    await tester.pumpAndSettle();
+
+    expect(SessionState.isSignedIn, isTrue);
+    expect(SessionState.kind.value, SessionKind.guest);
+    expect(find.text('Exercise Catalog'), findsOneWidget);
+    expect(find.text('Choose your session'), findsNothing);
+    // Restoring never creates a second profile.
+    expect(SessionState.canSignIn, isFalse);
   });
 
   testWidgets('session must be deleted before a new user can sign in', (
@@ -164,15 +190,15 @@ void main() {
       final button = tester.widget<ButtonStyleButton>(
         find.byKey(Key('session-option-$index')),
       );
-      return button.style?.backgroundColor?.resolve(const <WidgetState>{}) ==
-          const Color(0xFFFFB899);
+      final side = button.style?.side?.resolve(const <WidgetState>{});
+      return side?.color == AppColors.primaryOrange;
     }
 
     expect(highlighted(0), isTrue);
     expect(highlighted(1), isFalse);
     expect(
       tester.widget<Text>(find.text('Continue as guest')).style?.color,
-      const Color(0xFF2B1109),
+      AppColors.textWhite,
     );
 
     // Mouse wheel down highlights the next card.
@@ -296,7 +322,9 @@ void main() {
 
     expect(find.text('Update available'), findsOneWidget);
     expect(
-      find.text('Version 3.0.0 is available. You have 1.1.0.'),
+      find.text(
+        'Version 3.0.0 is available. You have ${UpdateService.currentVersion}.',
+      ),
       findsOneWidget,
     );
     expect(find.text('Big release'), findsOneWidget);

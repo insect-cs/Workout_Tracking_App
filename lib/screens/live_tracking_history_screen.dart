@@ -346,11 +346,13 @@ class _LiveTrackingHistoryScreenState extends State<LiveTrackingHistoryScreen> {
                           x: point.x,
                           y: point.y,
                           confidence: point.confidence,
+                          z: point.z,
                         ),
                       )
                       .toList(),
                   lineColor: AppColors.primaryOrange,
                   pointColor: AppColors.textWhite,
+                  minConfidence: 0.12,
                 ),
                 child: Container(
                   decoration: BoxDecoration(
@@ -497,6 +499,9 @@ class _SessionVideoPlayerState extends State<_SessionVideoPlayer> {
             },
             child: AspectRatio(
               aspectRatio: controller.value.aspectRatio,
+              // video_player already applies the MP4's rotation correction.
+              // Only the skeleton overlay (drawn separately below) needs the
+              // matching rotation from streamRotationDegrees.
               child: VideoPlayer(controller),
             ),
           ),
@@ -506,6 +511,7 @@ class _SessionVideoPlayerState extends State<_SessionVideoPlayer> {
                 frames: _poseFrames,
                 frameIndex: _poseFrameIndex,
                 unmirrorX: widget.session.landmarksMirroredX,
+                rotationDegrees: widget.session.streamRotationDegrees,
               ),
             ),
           Container(

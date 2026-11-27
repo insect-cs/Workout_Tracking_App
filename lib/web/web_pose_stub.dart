@@ -25,6 +25,5 @@ class WebPoseService {
   static Future<List<PoseKeypoint>?> detectFromCameraImageWeb(
     CameraImage image, {
     bool mirrorX = false,
-  }) async =>
-      null;
+  }) async => null;
 }

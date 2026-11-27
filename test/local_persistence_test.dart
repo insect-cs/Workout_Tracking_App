@@ -235,6 +235,7 @@ void main() {
           x: 0.4,
           y: 0.7,
           confidence: 0.9,
+          z: -0.3,
         ),
       ])!;
       final session = LiveTrackingSession(
@@ -262,10 +263,12 @@ void main() {
             x: 0.4,
             y: 0.7,
             confidence: 0.9,
+            z: -0.3,
           ),
         ],
         poseFrames: [replayFrame],
         landmarksMirroredX: true,
+        streamRotationDegrees: 270,
       );
 
       await LiveTrackingHistoryStore.save(session);
@@ -275,14 +278,17 @@ void main() {
       expect(restored.repCount, 12);
       expect(restored.formattedDuration, '1m');
       expect(restored.keypoints.single.name, 'left_knee');
+      expect(restored.keypoints.single.z, closeTo(-0.3, 0.002));
       expect(restored.poseFrames, hasLength(1));
       expect(restored.poseFrames.single.tMs, 400);
       expect(restored.landmarksMirroredX, isTrue);
+      expect(restored.streamRotationDegrees, 270);
       final replayKnee = restored.poseFrames.single
           .toPoseKeypoints(unmirrorX: restored.landmarksMirroredX)
           .single;
       expect(replayKnee.name, 'left_knee');
       expect(replayKnee.x, closeTo(0.6, 0.002));
+      expect(replayKnee.z, closeTo(-0.3, 0.002));
       expect(restored.hasVideo, isTrue);
       expect(restored.videoPath, '/tmp/live.webm');
       expect(restored.videoBase64, 'ZmFrZSB2aWRlbyBieXRlcw==');

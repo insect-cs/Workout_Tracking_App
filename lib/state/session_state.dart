@@ -106,6 +106,30 @@ abstract final class SessionState {
     await LocalStore.instance.flush();
   }
 
+  /// Reopens the saved session after a sign-out without deleting any data and
+  /// without creating a new guest/new-user profile. Returns false when there is
+  /// no valid saved session to restore.
+  static Future<bool> resumeSession() async {
+    final saved = _session;
+    if (saved == null || signedIn.value) return false;
+    final restored = _kindFromStorage(saved['kind']);
+    if (restored == null) return false;
+
+    LocalStore.instance.setNamespace(_storageName(restored));
+    await _reloadAppState(restored);
+
+    final restoredName = restored == SessionKind.newUser
+        ? (saved['name'] as String? ?? '')
+        : '';
+    _session = {...saved, 'signedIn': true};
+    await LocalStore.instance.writeGlobal(LocalStore.sessionKey, _session);
+    kind.value = restored;
+    displayName.value = restoredName;
+    signedIn.value = true;
+    await LocalStore.instance.flush();
+    return true;
+  }
+
   /// Permanently removes the only session and all of its local data.
   static Future<void> deleteSession() async {
     if (_session == null) return;

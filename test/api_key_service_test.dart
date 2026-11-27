@@ -16,7 +16,7 @@ void main() {
       'https://generativelanguage.googleapis.com/v1beta/models/'
       'gemini-3.1-flash-lite:generateContent',
     );
-    expect(AiEndpoint.presets.length, 5);
+    expect(AiEndpoint.presets.length, 4);
 
     final custom = AiEndpoint.custom(
       'https://example.com/v1beta/models/',
@@ -88,7 +88,7 @@ void main() {
 
     await store.setActive(second.id);
     expect(store.activeConfig.key, 'key-two-5678');
-    expect(store.activeConfig.endpoint.model, 'gemini-2.5-flash');
+    expect(store.activeConfig.endpoint.model, 'gemini-3.8-flash');
 
     final json = first.toJson();
     expect(ApiKeyEntry.fromJson(json).key, first.key);
@@ -177,7 +177,7 @@ void main() {
 
     expect(find.text('KEYS'), findsOneWidget);
     expect(find.text('ACTIVE ENDPOINT'), findsOneWidget);
-    expect(find.textContaining('model: gemini-2.5-flash'), findsOneWidget);
+    expect(find.textContaining('model: gemini-3.8-flash'), findsOneWidget);
     expect(find.text(ApiKeyStore.instance.active!.maskedKey), findsWidgets);
     expect(find.byTooltip('Show key'), findsNothing);
     expect(find.byTooltip('Hide key'), findsNothing);

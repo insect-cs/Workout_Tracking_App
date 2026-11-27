@@ -21,7 +21,7 @@ void main() {
     expect(find.text('Image'), findsOneWidget);
     expect(find.text('Video'), findsOneWidget);
     expect(
-      find.text('LIVE SQUAT TRACKING (PERSON IN FRONT OF CAMERA)'),
+      find.text('LIVE EXERCISE TRACKING (PERSON IN FRONT OF CAMERA)'),
       findsOneWidget,
     );
     expect(find.text('Live Tracking'), findsOneWidget);

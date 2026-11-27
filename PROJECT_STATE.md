@@ -4,17 +4,78 @@
 > Read this file at the start of any new session to restore context. Update it
 > after every meaningful change.
 >
-> **Last updated:** 2026-11-24 (final end-of-day checkpoint: v1.2.0 / commit
-> `7bfa403` released with the signed APK; Android 16 live-pose fix, diet/export
-> upgrades, Calories/BMI History, YouTube ID fix, return buttons and recorded
-> landmark replay overlay included; analyze clean, 97/97 tests pass, worktree
-> clean)
+> **Last updated:** 2026-11-27 (prepared and published v1.3.0 with a signed
+> release APK and GitHub release after a full secret scan. Earlier today: added nutrient bar charts after saving an
+> analysed food, weekly nutrient totals and major contributor foods, a date-range
+> selector for the diet summary/export, a clear selected state for time slots,
+> and fixed the saved-workout right-edge overflow. Earlier today: fixed the login
+> update check reporting the installed `v1.2.0` as an update, added Resume saved
+> session, moved the Auto palette button to login, palette-themed the sign-out
+> and login buttons, tidied the API key dialog, and changed the Gemini presets to
+> 3.1 Flash Lite / 3.8 Flash / 3.5 Flash Lite plus Custom. Live tracking keeps the
+> 270° camera lock with the preview aspect fix, and the exercise classifier covers
+> neck/shoulder/back/biceps/triceps/chest/legs/core with a stricter squat gate.)
 > **Session model:** Each new feature/bugfix session appends to §5 Task Log.
 
 ---
 
-## 0. Current State Snapshot (2026-11-24)
+## 0. Current State Snapshot (2026-11-27)
 
+- **Current worktree (2026-11-27):** The live camera path keeps the 24 Nov
+  `v1.2.0` settings (`availableCameras()` picker, manual switching,
+  `ResolutionPreset.medium`, NV21 on Android, no audio, `FlashMode.off`, no
+  Activity orientation lock). The live session locks only the camera use cases
+  to `DeviceOrientation.landscapeLeft` (270° clockwise); the app UI never rotates
+  and the detector/rotation probe is left untouched. Only the drawn
+  skeleton/replay is rotated to match the stream. On Android, recording now carries the
+  frame callback because plain CameraX recording silently unbinds image
+  analysis; a 3-second watchdog can drop video and fall back to a plain image
+  stream without changing lenses. The badge shows
+  `N FRAMES · N LANDMARKS` and a silent MoveNet rejection reports its pose/max
+  joint scores, rotation and frame format. Android detection is bundled TFLite
+  MoveNet Lightning with a low-rate ML Kit depth sample; web stays on TF.js
+  MoveNet and iOS stays on ML Kit. No MediaPipe model/JNI is bundled. The crop
+  clamp matches TF.js (the square crop may extend past the frame edge), the
+  detector probes frame rotations after a short run of empty frames, and live
+  counting uses the same 0.12 joint threshold as the skeleton painter. Live
+  tracking is now labelled **LIVE EXERCISE TRACKING**; a dedicated classifier
+  identifies neck, shoulder, back, biceps, triceps, chest, legs and core
+  movements, and only the identified exercise's counter moves. Bodyweight squats
+  now need a learned standing hip reference, both knees bent together, hip fold
+  and a real hip drop, so bent knees during curls or sitting no longer produce
+  false squat reps. The skeleton keeps using the same 270° lock value because
+  both the plugin texture and MoveNet are brought upright first. The login gate
+  now owns the Auto palette button and offers a Resume saved session action
+  after sign-out. Current validation: `dart format` clean,
+  `flutter analyze lib test android` clean, and the full `flutter test` suite
+  passes. These changes were committed and published as v1.3.0 on 2026-11-27.
+- **Superseded uncommitted work (2026-11-25, Android 16 landmarks still
+  failing):** The
+  user reported that Android 16 still shows no 3D landmarks during live camera
+  streaming and that the saved session only says “No live tracking happened”.
+  The v1.2.0 release did **not** contain the newer MediaPipe work in the
+  working tree. Current uncommitted code switches native live/video tracking to
+  MediaPipe Pose Landmarker, bundles `pose_landmarker_lite.task`, keeps ML Kit as
+  a fallback, repacks row-padded NV21 frames, treats MediaPipe's low/zero IMAGE
+  visibility as unknown so landmarks actually draw, and writes the real
+  detector error into the History message. After the user still saw no error,
+  the real root cause was found: CameraX silently unbinds image analysis when a
+  plain video recording starts, so the detector got zero frames. Android now
+  records with an `onAvailable` frame callback and a frame watchdog that can
+  drop video to preserve tracking; frame counts are shown in the UI. The user
+  then reported camera-angle friction, moving landmarks creating their own
+  activity, and two detector errors. MediaPipe now runs in VIDEO mode with
+  lower detection thresholds, the Android 16 `Optional<Float>` visibility cast
+  is fixed, one subject is tracked with continuity scoring and landmark
+  smoothing, and held frames no longer drive exercise counters. The user then
+  reported that the stream still needed repeated manual adjustment and that
+  landmarks still created activity: live tracking now automatically tries every
+  camera reported by the platform when the first one cannot find a stable pose,
+  uses MediaPipe metric world coordinates for joint angles, keeps the raw
+  detector reliability separate from the promoted overlay confidence, and only
+  feeds counters after consecutive reliable same-subject frames with a held
+  movement. Analyzer clean, 112/112 tests pass, and a fresh `app-debug.apk` was
+  rebuilt. **Needs on-device verification.**
 - **Released work (2026-11-24, v1.2.0):** (1) Android 16 live-camera
   pose-tracking fix — `lib/services/pose_analysis_service.dart`,
   `lib/screens/pose_tracking_screen.dart`, new `test/pose_frame_test.dart`.
@@ -33,9 +94,10 @@
   verification on the Android 16 device.**
 - **Git / GitHub:** `workout_app` is a Git repository. `origin` is
   `https://github.com/insect-cs/Workout_Tracking_App.git`, branch `main`.
-  All released work is committed and pushed; `main` is in sync with
-  `origin/main` and the working tree is clean. The 2026-11-24 fixes above are in
-  commit `7bfa403` / **v1.2.0**, authored as
+  Released work is committed and pushed; `main` is in sync with `origin/main`
+  at `6f0abff` (the state-doc commit after `7bfa403` / **v1.2.0**). The
+  2026-11-25 MediaPipe work is **uncommitted in the working tree**. The
+  2026-11-24 fixes above are in commit `7bfa403` / **v1.2.0**, authored as
   `insect-cs@users.noreply.github.com`. Annotated tag **v1.2.0** is pushed.
   GitHub release **v1.2.0 — Workout Tracking** is
   published (not draft, not prerelease) with `app-release.apk` and
@@ -139,12 +201,13 @@
   features.
 - **Validation:** `dart format lib test` clean,
   `flutter analyze lib test android` **No issues found**, `flutter test`
-  **97/97 passed** (7 frame-packing, 4 new diet, 4 new Calories History, 2 new
-  YouTube-ID, 4 new return-to-form, and 6 new replay-landmark tests), and
-  `flutter build apk --debug` succeeded. `flutter build web --release`
-  succeeded earlier. Built `build/web/assets/assets/fonts/` contains the
-  bundled TTFs. Signed Android release APK built and verified after the R8
-  fix; a new signed APK still needs to be built for the 2026-11-24 fixes.
+  **112/112 passed** (the 97 v1.2.0 tests plus 9 MediaPipe conversion/stability
+  tests and 6 frame/angle/reliability regression tests), and
+  `flutter build apk --debug`
+  succeeded on 2026-11-25. `flutter build web --release` succeeded earlier.
+  Built `build/web/assets/assets/fonts/` contains the bundled TTFs. Signed
+  Android release APK for v1.2.0 was built and verified after the R8 fix; the
+  uncommitted 2026-11-25 MediaPipe work has **only a debug APK** so far.
   `flutter config --enable-windows-desktop` was restored after the
   temporary build workaround.
 - **Android release / signing:** Unique app ID `com.insectcs.workoutapp`,
@@ -307,11 +370,14 @@ fonts added 2026-11-20. Single-session login, full key masking, and Plan
 History added the same day. Signed Android release APK published as GitHub
 v1.0.0 the same day; an Android 16 launch crash caused by AGP 9 R8 was fixed and
 the user confirmed the app works correctly. On 2026-11-24 the Android live
-camera landmark pipeline was repaired (see §5); this change is uncommitted and
-awaiting on-device verification. Latest validation (authoritative):
-`flutter analyze lib test android` no issues, `flutter test` 97/97 passed,
-`flutter build apk --debug` succeeded, `flutter build web --release` succeeded
-previously, release APK signature and download hash verified.
+camera landmark pipeline was first repaired for ML Kit, then restored to that
+`v1.2.0` camera path on 2026-11-26 and re-layered with TFLite MoveNet, relative
+depth visualisation, and TF.js-matching crop/rotation handling (see §5). Latest
+validation (authoritative): `flutter analyze lib test android` no issues,
+`flutter test` 110/110 passed, `flutter build apk --debug` (271,327,015 bytes)
+and `flutter build web --no-wasm-dry-run` succeeded, release APK signature and
+download hash verified for v1.2.0. The uncommitted Android MoveNet/depth path
+still needs on-device verification.
 
 **Pose tracking (web/mobile):**
 - Real-time skeleton over playing video / live camera (mobile) ✅
@@ -330,7 +396,8 @@ previously, release APK signature and download hash verified.
   thumbnails, and user-opened links still require network.
 - Live camera tracking is mobile-only (web shows explanatory error)
 - Windows desktop: no pose tracking (ML Kit/camera limitations)
-- MoveNet confidence < 0.3 joints are not drawn (painter rule)
+- MoveNet joints with confidence < 0.12 are not drawn or counted (aligned live
+  painter, replay and counter threshold)
 - Export on native saves to app documents directory (path shown in snackbar);
   on web it triggers a browser download
 - Latest pose-tracking refinements (dynamic counter/elbow angle/continuous ID)
@@ -1395,6 +1462,956 @@ flutter build web --release
   changes to recover. If the device still reports no pose, use the on-screen
   detection badge text for the next diagnosis.
 
+### 2026-11-25 — Android 16 still shows no live landmarks: MediaPipe path hardened
+- **Reported by user:** After reviewing the project state, the Android 16
+  device still showed no 3D landmarks during the live video stream. Stopping
+  the session saved only a video-only entry whose message was
+  “No live tracking happened”.
+- **State finding:** `PROJECT_STATE.md` ended at the clean v1.2.0 checkpoint,
+  but the working tree contained an uncommitted 2026-11-25 rewrite dated after
+  that document: `pose_mediapipe_service.dart`, a native
+  `PoseLandmarker` bridge, a bundled `pose_landmarker_lite.task`, and native
+  video-frame decoding. The GitHub v1.2.0 APK does **not** contain that work.
+- **Root causes addressed:**
+  1. A single-plane NV21 buffer with row padding longer than
+     `width × height × 1.5` was only truncated. That keeps padding bytes and
+     drops the bottom rows, so MediaPipe/ML Kit receive a corrupted image.
+     `packedNv21FromCameraImage()` now rebuilds a tight NV21 buffer using the
+     Y and chroma row strides; exact-size buffers are still returned unchanged.
+  2. MediaPipe IMAGE-mode landmarks often report 0 or very low visibility.
+     `PoseMediapipeService` was discarding any point below 0.2, so a real pose
+     could yield zero drawable landmarks. Low/zero values are now treated as
+     unknown (confidence 1.0), and the same conversion is used when selecting
+     the primary subject.
+  3. If MediaPipe failed to load or found no pose, the app had no detector
+     fallback and the saved History entry hid the real reason. Live frames now
+     fall back to ML Kit, and the video-only feedback includes the actual
+     detector message. Live session `engine` now reports
+     “MediaPipe Pose Landmarker” on native, and the analyzing card no longer
+     says “ML Kit”.
+- **Files:** `lib/services/pose_analysis_service.dart`,
+  `lib/services/pose_mediapipe_service.dart`,
+  `lib/screens/pose_tracking_screen.dart`, `test/pose_frame_test.dart`,
+  `test/pose_mediapipe_test.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **108/108 passed**, `flutter build apk --debug` succeeded and produced
+  `build/app/outputs/flutter-apk/app-debug.apk` with the bundled MediaPipe task
+  and JNI libraries.
+- **Status:** Superseded by the next entry — the user reported no landmarks and
+  no detector error even after installing that APK.
+
+### 2026-11-25 — Root cause: video recording silently killed camera frame stream
+- **Reported by user:** Installed the fresh debug APK, but live tracking still
+  showed no 3D landmarks and no error/detection message at all.
+- **Root cause:** In `camera_android_camerax` 0.6.30,
+  `startVideoRecording()` calls `startVideoCapturing()` without a stream
+  callback. On devices below CameraX `INFO_SUPPORTED_HARDWARE_LEVEL_3`, that
+  method unbinds the `imageAnalysis` use case so a previously started
+  `startImageStream()` stops silently. The app kept showing `CameraPreview`
+  (preview use case still bound) and recorded a video, but the pose detector
+  received **zero frames**, explaining both “no landmarks” and “no error”.
+- **Fix (`lib/screens/pose_tracking_screen.dart`):**
+  - On Android, start the recording with
+    `startVideoRecording(onAvailable: _processLiveFrame)` instead of calling
+    `startImageStream()` and then starting a plain recording. The callback is
+    the only plugin-supported way to keep frames flowing during a recording.
+  - Added a 3-second frame watchdog. If no frame arrives, it stops the stalled
+    recording, switches to `startImageStream(_processLiveFrame)` so tracking
+    still works, and shows “Recording blocked camera frames on this device;
+    switched to tracking without video”. Non-recording stalls show an explicit
+    “No camera frames received” message.
+  - Added visible diagnostics: the live overlay badge now reads
+    `N LANDMARKS · N FRAMES`, and the stats card reports the frame count and
+    engine (`MediaPipe Pose Landmarker` / `MoveNet (TF.js)`) when there is no
+    error. `_liveFrameCount` is reset per session.
+- **Files:** `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **108/108 passed**, `flutter build apk --debug` succeeded and the APK was
+  rebuilt at 17:46 local time.
+- **Status:** Superseded by the next entry — frames now reached the detector,
+  but the native visibility cast failed and the overlay was not tracking one
+  subject stably.
+
+### 2026-11-25 — Fix tracking accuracy, camera angle and MediaPipe cast errors
+- **Reported by user:** The newest APK finally showed detector messages, but
+  the camera capture still required manually adjusting the phone to get the
+  correct angle, the 3D landmarks moved on their own and generated/recorded
+  activity, and two errors appeared: `Detection issue: No pose landmarks in
+  this camera frame` and `PlatformException(POSE_DETECTION_ERROR,
+  java.util.optional cannot be cast to java.lang.Number, null, null)`.
+- **Root causes addressed:**
+  1. **Native cast bug:** MediaPipe 1.2.2 declares
+     `NormalizedLandmark.visibility()`/`presence()` as `Optional<Float>`, not
+     `Number`. `MainActivity.kt` cast visibility to `Number` for every
+     landmark, so every successful detection threw before any landmark could
+     cross the MethodChannel. It now reads `visibility().orElse(presence())`
+     and infers safely.
+  2. **Per-frame re-detection jitter:** The native landmarker ran in
+     `RunningMode.IMAGE`, so each frame was treated as an unrelated still.
+     It now uses `RunningMode.VIDEO` with strictly increasing timestamps and
+     lower 0.35 detection/presence/tracking thresholds, letting MediaPipe keep
+     the same person across frames. `MPImage` is closed after each inference.
+  3. **Subject switching and false activity:** `PoseMediapipeService` now
+     scores multiple poses with a continuity bonus toward the landmarks it is
+     already tracking, rejects clearly upside-down full bodies (wrong camera
+     rotation probe), and exponentially smooths the 13 drawn points. Sudden
+     jumps snap to the new pose instead of drawing a skeleton between two
+     people.
+  4. **Held frames creating phantom reps:** Brief missed detections now reuse
+     the last skeleton for up to 600 ms, but `PoseFrame.isStale` marks it so the
+     live screen draws it while skipping knee/elbow counters, exercise
+     classification and replay sampling. Real native exceptions are never
+     hidden behind a held frame.
+  5. **Camera-angle friction:** Live tracking now prefers the front camera
+     when available (the switch button still shows the picker), and the
+     feedback tells the user to frame head through feet. The rotation that
+     actually finds a plausible upright subject is cached; changing rotation
+     clears the smoothing history so two viewpoints are never blended.
+- **Files:** `android/app/src/main/kotlin/com/insectcs/workoutapp/MainActivity.kt`,
+  `lib/services/pose_mediapipe_service.dart`,
+  `lib/services/pose_analysis_service.dart`,
+  `lib/screens/pose_tracking_screen.dart`, `test/pose_mediapipe_test.dart`,
+  `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **108/108 passed**, `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` with the bundled MediaPipe task
+  and JNI libraries.
+- **Status:** Superseded by the next entry; the app still required manual camera
+  adjustment and could count landmark jitter as activity.
+
+### 2026-11-25 — Use all native cameras and stop landmark-generated activity
+- **Reported by user:** The available stream still had to be adjusted many
+  times, and 3D landmarks were still generating activity by themselves.
+- **Root causes addressed:**
+  1. **One camera was asked to do all the work:** live tracking now orders every
+     camera returned by `availableCameras()` as front → back → external. If the
+     active lens has frames but no stable person for five seconds, a watchdog
+     switches to the next native camera automatically; the preview switch
+     button still allows a manual choice. Switching now awaits release of the
+     old controller (including stopping an active recording) so Android does
+     not hit a "camera busy" race.
+  2. **Drawing confidence leaked into counting confidence:** low/zero MediaPipe
+     visibility is promoted to 1.0 only for drawing, while the original score
+     is preserved as `PoseKeypoint.reliability`. Joint angles, exercise
+     classification and counters require reliability ≥ 0.5 on the relevant
+     landmarks instead of trusting the promoted overlay value.
+  3. **Image-space angles distorted by viewpoint:** joint angles now prefer
+     MediaPipe's metric world coordinates (`angleBetweenWorldKeypoints`) and
+     fall back to aspect-corrected 2D only for ML Kit/web frames.
+  4. **Jitter could still arm a rep:** activity is only accepted after at least
+     six consecutive fresh, reliable frames whose tracked-body centre stays
+     within 20% of the previous frame. Held/stale skeletons remain visible but
+     never reach counters. A squat now needs <100° held for 250ms before a
+     standing lockout can count; arm repetitions need <80° held for 250ms.
+     Exercise labels also require the same deep excursion instead of
+     classifying a single noisy frame.
+- **Files:** `lib/screens/pose_tracking_screen.dart`,
+  `lib/services/pose_analysis_service.dart`, `test/pose_frame_test.dart`,
+  `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **112/112 passed**, `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` at 18:16 local time.
+- **Status:** **Uncommitted; no release APK built.** Install this newest debug
+  APK and start live tracking; the app should try the device's cameras by
+  itself, show "Stabilizing tracking on this person..." briefly, and only
+  increment reps/name an exercise after sustained real movement. If landmarks
+  still move independently, report the exact on-screen detector/status text.
+- **State save:** Confirmed at 18:19 that this checkpoint matches the working
+  tree; no code changes were made after the 18:16 APK build.
+
+### 2026-11-26 — Restore verified camera path and layer MediaPipe 3D landmarks
+- **Requested by user:** The 24 November released Android build had no camera
+  issues and could use all cameras on the device. Use those camera properties,
+  and on top of them put MediaPipe 3D landmarks that detect the person in real
+  time in a guided, structured overlay, without stale movements or landmarks
+  generating activity on their own.
+- **Camera restored to the 2026-11-24 released code
+  (`lib/screens/pose_tracking_screen.dart`):**
+  - `availableCameras()` is enumerated and **every** returned camera is shown
+    in the picker when there is more than one; a single camera starts directly.
+    The automatic front→back→external failover watchdog, ordered candidate
+    list and "Trying <camera>..." auto-switching were removed, so the detector
+    no longer fights the user over framing/lens choice. The switch button still
+    re-opens the full picker and now waits for the old lens to be released.
+  - The verified controller properties are unchanged: `ResolutionPreset.medium`,
+    `enableAudio: false`, NV21 on Android / BGRA on iOS / unknown on web and
+    `FlashMode.off` on native. Web/iOS use a plain image stream with recording
+    started afterwards without blocking it. Android uses the recording's
+    `onAvailable` callback instead (see the follow-up entry below), because
+    CameraX unbinds `ImageAnalysis` for a plain recording. The frame watchdog
+    only recovers a stalled frame source; it never changes the selected camera.
+  - Native mirroring stays off (the native `CameraPreview` is not mirrored);
+    web front-camera mirroring is retained so the skeleton lines up with the
+    preview.
+- **MediaPipe layer kept on top:** Android still uses the native
+  `PoseLandmarker` in VIDEO mode with strictly increasing timestamps, lower
+  0.35 thresholds and metric world coordinates; ML Kit remains a fallback; web
+  uses MoveNet. The structured 13-joint skeleton is smoothed, follows the
+  nearest previously tracked subject, rejects wrong-rotation upside-down
+  poses, and now colours nearer (negative z) joints brighter for a clearer 3D
+  read. The live badge reads `N 3D LANDMARKS · N FRAMES` and the on-screen
+  guidance asks the user to frame head through feet.
+- **No self-generated activity:** held skeletons are still marked `isStale`
+  and are drawn only; stale frames bypass counters, classification and replay
+  sampling. Counters still require ≥6 consecutive fresh, reliable, same-subject
+  frames, raw visibility ≥0.5 (not the promoted draw value), metric joint
+  angles and 250 ms held squat/arm excursions. Structural plausibility now
+  ignores joints with visibility ≤0.2 so an unreliable ankle cannot reject a
+  valid standing subject.
+- **Files:** `lib/screens/pose_tracking_screen.dart`,
+  `lib/services/pose_mediapipe_service.dart`,
+  `lib/widgets/pose_skeleton_painter.dart`, `test/pose_frame_test.dart`,
+  `test/pose_mediapipe_test.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **114/114 passed** (new tests cover stale held skeletons and unreliable-joint
+  structural checks), `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` (329,839,483 bytes, 11:11 local)
+  with `assets/pose_landmarker_lite.task` and the MediaPipe JNI libraries
+  verified inside it.
+- **Status:** Superseded by the on-device camera-transport fix immediately
+  below (the plain recording still unbound CameraX image analysis on the test
+  device).
+
+### 2026-11-26 — On-device fix: keep CameraX `ImageAnalysis` alive while recording
+- **User report:** the Android 16 preview/video feed was smooth, but the amber
+  badge read `Recording blocked camera frames on this device, tracking without
+  video`. That message came from the frame watchdog, not the pose detector.
+- **Root cause:** verified in `camera_android_camerax-0.6.30`
+  (`android_camera_camerax.dart`, `startVideoCapturing()`): calling plain
+  `startVideoRecording()` passes no stream callback, so the plugin calls
+  `_unbindUseCaseFromLifecycle(imageAnalysis!)`. `Preview` and `VideoCapture`
+  stay bound, so the camera looks healthy, but `_processLiveFrame` is never
+  called and `_liveFrameCount` stays at zero. This is the same CameraX hardware
+  limitation documented in the earlier 2026-11-25 entry; restoring the Nov 24
+  plain-stream-plus-recording combination reintroduced it on this device.
+- **Fix (`lib/screens/pose_tracking_screen.dart`):**
+  - Android now starts recording with
+    `controller.startVideoRecording(onAvailable: _processLiveFrame)`. The plugin
+    rebinds `ImageAnalysis` through `onStreamedFrameAvailable()`, so the same
+    frames feed the MP4 **and** MediaPipe. Web/iOS keep the plain image stream
+    plus non-blocking recording.
+  - Reintroduced `_recordingOwnsFrameStream` for watchdog recovery only: if a
+    device still yields zero frames, the stalled recording is stopped and
+    `_startImageStreamOnly()` retries without video. The old alarming message
+    became `Tracking without video on this device`, and it clears on the next
+    real frame. The watchdog never changes lenses or camera properties.
+  - Teardown uses `controller.value.isStreamingImages` as the single source of
+    truth so a callback-owned stream is not stopped twice, and the now-unused
+    `_isStreamingLiveFrames` flag was removed.
+  - Lens enumeration/picker, `ResolutionPreset.medium`, NV21 on Android,
+    `enableAudio: false`, `FlashMode.off` and manual switching remain exactly as
+    in the verified Nov 24 build.
+- **Files:** `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **114/114 passed**, `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` (329,841,137 bytes, 11:48 local)
+  with `assets/pose_landmarker_lite.task` and the MediaPipe JNI libraries
+  verified inside the APK.
+- **Status:** Superseded by the native-frame orientation fix immediately below.
+
+### 2026-11-26 — Native camera frame orientation for live landmarks
+- **User report:** 3D landmarks appeared, but the subject could only be framed
+  by constantly changing the phone angle. The user asked for the live frame to
+  look like a native Android camera video so the subject can be captured
+  normally.
+- **Root cause:** `_buildLiveTrackingPreview()` forced every live preview into
+  `1 / controller.value.aspectRatio` (portrait) regardless of device
+  orientation. `CameraPreview` itself uses `controller.value.aspectRatio` in
+  landscape and rotates the texture with `RotatedBox`. The outer box therefore
+  squeezed/letterboxed the native frame in landscape, so the landmark overlay
+  (already in display-rotated coordinates from the native detector) no longer
+  lined up with the subject and framing felt wrong.
+- **Fix (`lib/screens/pose_tracking_screen.dart`):**
+  - The preview box now mirrors the camera plugin's own orientation rules:
+    `recordingOrientation` while recording, otherwise
+    `previewPauseOrientation ?? lockedCaptureOrientation ?? deviceOrientation`.
+    Landscape uses the sensor aspect ratio; portrait uses its inverse.
+  - `ValueListenableBuilder<CameraValue>` rebuilds the preview when orientation
+    or recording state changes, so the overlay keeps matching the native frame
+    if the device is rotated.
+  - The Android recording-owned frame path and Nov 24 lens/picker properties
+    are unchanged; only the display box follows the native video frame.
+- **Files:** `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **114/114 passed**, `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` (329,842,569 bytes, 12:08 local)
+  with `assets/pose_landmarker_lite.task` and the MediaPipe JNI libraries
+  verified inside the APK.
+- **Status:** Superseded by the portrait-default stream fix immediately below.
+
+### 2026-11-26 — Portrait-default live video/frame stream
+- **User report:** after installing the orientation-fix APK, the Android device
+  still opened the live video stream in landscape. The user wants the stream to
+  be portrait by default so the subject can be framed normally.
+- **Root cause:** the app never set a preferred Activity orientation, and the
+  `CameraController` capture orientation was left unlocked. CameraX therefore
+  took `deviceOrientation` from the physical device; when the phone was held in
+  landscape, `recordingOrientation`, the preview texture and the analysis frame
+  were all landscape. The previous fix only made the overlay match that
+  landscape frame; it did not choose portrait as the default.
+- **Fix (`lib/screens/pose_tracking_screen.dart`):**
+  - On Android, the pose screen requests `DeviceOrientation.portraitUp` in
+    `initState` and restores the platform default when disposed.
+  - After `controller.initialize()` and before any stream/recording starts, the
+    controller is locked with
+    `lockCaptureOrientation(DeviceOrientation.portraitUp)`. This makes CameraX
+    target portrait rotation for `VideoCapture`, `ImageCapture` and
+    `ImageAnalysis`, so the saved video and MediaPipe frames are portrait even
+    if the phone is physically landscape. A lock failure is logged and tracking
+    continues with the previous behavior.
+  - `_processLiveFrame` treats a successful portrait lock as display rotation
+    0, overriding the physical `Display.getRotation()` value. This keeps
+    MediaPipe/ML Kit landmark rotation consistent with the locked frame.
+  - The preview box continues to mirror the camera plugin's applicable
+    orientation; `lockedCaptureOrientation`/`recordingOrientation` are now
+    portrait by default. Lens enumeration/picker, `ResolutionPreset.medium`,
+    NV21, `enableAudio: false`, `FlashMode.off`, manual switching, the
+    recording `onAvailable` frame callback and all anti-phantom gates are
+    unchanged.
+- **Files:** `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **114/114 passed**, `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` (329,844,390 bytes, 12:34 local)
+  with `assets/pose_landmarker_lite.task` and the MediaPipe JNI libraries
+  verified inside the APK.
+- **Status:** Superseded by the native Activity orientation lock immediately
+  below. The Flutter/Dart-only lock did not change the on-device stream.
+
+### 2026-11-26 — Native Android Activity orientation lock for portrait stream
+- **User report:** after installing the Flutter-locked APK, the live stream still
+  opened in landscape. The user asked to use native Android camera/Activity
+  properties because portrait is required.
+- **Root cause:** `SystemChrome.setPreferredOrientations()` and
+  `CameraController.lockCaptureOrientation()` are Dart/platform-channel calls
+  made after the Activity and camera use cases have already been configured from
+  the physical device orientation. On this device they did not take effect for
+  the CameraX preview/video stream, so `recordingOrientation` and the visible
+  frame stayed landscape.
+- **Fix:**
+  - `android/app/src/main/AndroidManifest.xml`: the launcher Activity now
+    declares `android:screenOrientation="portrait"` and
+    `android:resizeableActivity="false"` (with the lint suppression), so the
+    native Activity starts in portrait before Flutter or CameraX asks for a
+    rotation.
+  - `android/app/src/main/kotlin/.../MainActivity.kt`: `onCreate()` sets
+    `requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT` as a
+    second native guarantee.
+  - `lib/screens/pose_tracking_screen.dart`: still requests/locks portrait from
+    Dart, but landmark detection no longer consults the physical
+    `Display.getRotation()` on Android. Android frames are always rotated as
+    portrait because the Activity/CameraX stream is now natively portrait.
+  - Lens enumeration/picker, `ResolutionPreset.medium`, NV21, `enableAudio:
+    false`, `FlashMode.off`, manual switching, the recording `onAvailable` frame
+    callback and all anti-phantom gates remain unchanged.
+- **Files:** `android/app/src/main/AndroidManifest.xml`,
+  `android/app/src/main/kotlin/com/insectcs/workoutapp/MainActivity.kt`,
+  `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **114/114 passed**, `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` (329,844,022 bytes, 12:48 local)
+  with `assets/pose_landmarker_lite.task` and the MediaPipe JNI libraries
+  verified inside the APK. `aapt2 dump xmltree` confirmed the packaged manifest
+  has `screenOrientation=1` (portrait) and `resizeableActivity=false`.
+- **Status:** Superseded by the landscape-default stream change below. The user
+  tested the native portrait build and asked for landscape instead.
+
+### 2026-11-26 — Landscape-default live video/frame stream
+- **User report:** after testing the native portrait APK, the user asked to
+  change the live video stream orientation to landscape by default.
+- **Decision:** use the camera's natural landscape sensor frame and lock the
+  Android Activity plus CameraX capture use cases to `landscapeLeft`. This keeps
+  the preview, saved video and MediaPipe frame rotation consistent.
+- **Fix:**
+  - `android/app/src/main/AndroidManifest.xml`: Activity now declares
+    `android:screenOrientation="landscape"` (still non-resizable).
+  - `android/app/src/main/kotlin/.../MainActivity.kt`: `onCreate()` sets
+    `requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE`.
+  - `lib/screens/pose_tracking_screen.dart`: the Dart request is now
+    `DeviceOrientation.landscapeLeft`, and `lockCaptureOrientation()` uses the
+    same value before the stream/recording starts.
+  - Android landmark detection now assumes `Surface.ROTATION_90` (display
+    rotation step 1) for the locked landscapeLeft stream rather than portrait
+    rotation 0. All other camera properties, the recording `onAvailable` frame
+    callback and anti-phantom gates are unchanged.
+- **Files:** `android/app/src/main/AndroidManifest.xml`,
+  `android/app/src/main/kotlin/com/insectcs/workoutapp/MainActivity.kt`,
+  `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **114/114 passed**, `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` (329,844,184 bytes, 13:00 local)
+  with `assets/pose_landmarker_lite.task` and the MediaPipe JNI libraries
+  verified inside the APK. `aapt2 dump xmltree` confirmed the packaged manifest
+  has `screenOrientation=0` (landscape) and `resizeableActivity=false`.
+- **Status:** Superseded by the live-stream-scoped lock below. The APK-wide
+  landscape lock was rejected by the user.
+
+### 2026-11-26 — Landscape only for the live squat video stream
+- **User correction:** “don't make the whole apk landscape, in pose tracking in
+  live tracking when live squat tracking is clicked the video stream appears
+  so, make this video stream landscape.”
+- **Root cause:** the previous fix set `android:screenOrientation="landscape"`
+  in `AndroidManifest.xml` and `SCREEN_ORIENTATION_LANDSCAPE` in
+  `MainActivity.onCreate()`, so every screen opened in landscape. The requested
+  behavior is normal app orientation everywhere else and landscape only for the
+  live camera stream.
+- **Fix:**
+  - `android/app/src/main/AndroidManifest.xml`: removed the global
+    `screenOrientation`, `resizeableActivity` and `tools` entries; the Activity
+    is back to the original unspecified orientation.
+  - `android/app/src/main/kotlin/.../MainActivity.kt`: removed the `onCreate()`
+    lock. The existing `com.insectcs.workoutapp/pose_video` channel now handles
+    `lockLandscapeOrientation` and `restoreOrientation`; the native side saves
+    `requestedOrientation` once and restores it when the live session ends.
+  - `lib/services/pose_video_frame_io.dart` and `pose_video_frame_stub.dart`:
+    expose the two new channel methods to Dart (stub is a no-op on web).
+  - `lib/screens/pose_tracking_screen.dart`: `_startLiveWithCamera()` calls
+    `_lockLiveLandscape()` before creating/initializing `CameraController`, then
+    locks CameraX capture to `DeviceOrientation.landscapeLeft`.
+    `_stopLiveTrackingSession()`, the camera-start error path, and `dispose()`
+    restore the original app orientation after the camera is released.
+  - Android landmark detection still treats the live frames as
+    `Surface.ROTATION_90` (step 1) because the stream is locked landscapeLeft.
+    Lens enumeration/picker, `ResolutionPreset.medium`, NV21, `enableAudio:
+    false`, `FlashMode.off`, manual switching, the recording `onAvailable` frame
+    callback and anti-phantom gates are unchanged.
+- **Files:** `android/app/src/main/AndroidManifest.xml`,
+  `android/app/src/main/kotlin/com/insectcs/workoutapp/MainActivity.kt`,
+  `lib/services/pose_video_frame_io.dart`,
+  `lib/services/pose_video_frame_stub.dart`,
+  `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **114/114 passed**, `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` (329,845,003 bytes, 13:18 local)
+  with `assets/pose_landmarker_lite.task` and the MediaPipe JNI libraries
+  verified inside the APK. `aapt2 dump xmltree` confirmed the packaged manifest
+  contains **no** `screenOrientation` or `resizeableActivity` entry, so the
+  APK-wide landscape lock is gone.
+- **Status:** Superseded by the native CameraX selector / stream-only fix below.
+  The user reported that the whole app still rotated when live tracking opened.
+
+### 2026-11-26 — Native CameraX camera selector, no Activity rotation
+- **User report:** “whole app is getting rotated when clicked on live squat
+  tracking. use native camera selector and back to ml kit by google.” Follow-up
+  choices: keep MediaPipe for now (“use mediapipe for now”) and replace the
+  Flutter camera picker with a native CameraX selector.
+- **Root cause:** the scoped lock still changed `requestedOrientation`, so the
+  Activity/window (not just the video stream) rotated when live tracking began.
+  The user wants the app UI to stay in its normal orientation while only the
+  live camera stream is landscape.
+- **Fix:**
+  - Removed every Activity orientation change: no manifest
+    `screenOrientation`, no `onCreate()` lock, no
+    `lockLandscapeOrientation`/`restoreOrientation` channel or Dart wrappers.
+  - Added `android/app/src/main/kotlin/.../NativeCameraSelector.kt`: Android
+    lists cameras through CameraX `ProcessCameraProvider.availableCameraInfos`,
+    reading native id/lens/sensor rotation from Camera2 characteristics. A new
+    `com.insectcs.workoutapp/native_camera_selector` channel requests the camera
+    permission and returns every bindable lens, including multiple same-side
+    cameras.
+  - Added `lib/services/native_camera_selector.dart` with conditional IO/stub
+    implementations. `pose_tracking_screen.dart` now uses that native list for
+    the live picker and maps the selected id back to a `CameraDescription`, so
+    the verified camera plugin still owns preview/video/frame transport.
+  - `controller.lockCaptureOrientation(DeviceOrientation.landscapeLeft)` is the
+    only landscape setting. CameraX target rotation rotates the preview texture,
+    saved video and `ImageAnalysis` frames inside the unchanged Activity UI.
+  - Android landmark detection keeps using `Surface.ROTATION_90` (step 1) for
+    the locked landscape frames. MediaPipe remains the primary detector and ML
+    Kit remains the fallback. Lens properties (`ResolutionPreset.medium`, NV21,
+    `enableAudio: false`, `FlashMode.off`, manual switching), the recording
+    `onAvailable` frame callback and anti-phantom gates are unchanged.
+- **Files:** `android/app/build.gradle.kts`,
+  `android/app/src/main/kotlin/com/insectcs/workoutapp/MainActivity.kt`,
+  `android/app/src/main/kotlin/com/insectcs/workoutapp/NativeCameraSelector.kt`,
+  `lib/services/native_camera_selector.dart`,
+  `lib/services/native_camera_selector_io.dart`,
+  `lib/services/native_camera_selector_stub.dart`,
+  `lib/services/pose_video_frame_io.dart`,
+  `lib/services/pose_video_frame_stub.dart`,
+  `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **114/114 passed**. The first APK build failed because `ProcessCameraProvider`
+  was imported from `androidx.camera.core`; it was corrected to
+  `androidx.camera.lifecycle.ProcessCameraProvider`. The final
+  `flutter build apk --debug` succeeded and rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` (329,846,846 bytes, 13:40 local)
+  with `assets/pose_landmarker_lite.task` and the MediaPipe JNI libraries
+  verified inside the APK. `aapt2 dump xmltree` confirmed the packaged manifest
+  contains **no** `screenOrientation` or `resizeableActivity` entry.
+- **Status:** Superseded by the camera-plugin priming fix below.
+
+### 2026-11-26 — Fix `CameraInfo` cast error after native picker change
+- **User report:** clicking Live Squat Tracking fails with
+  `could not start live camera: type 'camerainfo' is not a subtype of type
+  'camerainfo' in type cast where camerainfo is from
+  package:camera_android_camerax/src/camerax_library.g.dart ... camerax_library.dart`.
+- **Root cause:** the native CameraX selector replaced the app's only call to
+  `availableCameras()`. In `camera_android_camerax` 0.6.30 the wrapper
+  `CameraInfo`/`LiveData` Pigeon factories are registered by `setUpGenerics()`
+  inside `availableCameras()`. `CameraController.initialize()` casts the
+  `CameraInfo` returned by `Camera.getCameraInfo()` to the wrapper type, so
+  without that priming call the generated Pigeon class cannot be cast.
+- **Fix:** in `_startLiveWithCamera()` on Android, call `availableCameras()`
+  before constructing/initializing `CameraController`. The returned list is
+  ignored: the user-visible picker still comes from the native CameraX
+  selector. The call registers the wrapper factories and also warms the
+  plugin's exact-camera map with the same native camera ids used by the
+  selector.
+- **Files:** `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation:** `dart format lib test` clean,
+  `flutter analyze lib test android` **No issues found**, `flutter test`
+  **114/114 passed**, `flutter build apk --debug` succeeded. The rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` is 329,847,206 bytes (13:55
+  local); `aapt2 dump xmltree` confirmed no `screenOrientation` or
+  `resizeableActivity` entry, and the MediaPipe model/JNI libraries are still
+  packaged.
+- **Status:** Superseded by the revert to the 24 Nov release build below.
+
+### 2026-11-26 — Revert live squat tracking to the 24 Nov release build
+- **What:** Removed every post-`v1.2.0` live-squat-tracking change and restored
+  the live-tracking code to tag **v1.2.0** (24 Nov release). Deleted the
+  MediaPipe bridge/model, native CameraX selector, orientation channels,
+  `PoseFrame` web/skeleton changes, and their extra tests.
+- **Why:** The user asked to remove all live-squat-tracking changes and restore
+  the camera-related properties to the 24 Nov release build.
+- **Restored from `v1.2.0`:** `android/app/build.gradle.kts`,
+  `android/app/proguard-rules.pro`,
+  `android/app/src/main/kotlin/com/insectcs/workoutapp/MainActivity.kt`,
+  `lib/screens/pose_tracking_screen.dart`,
+  `lib/services/pose_analysis_service.dart`, `lib/web/web_pose_stub.dart`,
+  `lib/web/web_pose_web.dart`, `lib/widgets/pose_skeleton_painter.dart`,
+  `test/pose_frame_test.dart`.
+- **Deleted (not in the release):** `android/app/src/main/assets/` (model),
+  `NativeCameraSelector.kt`, `native_camera_selector*.dart`,
+  `pose_mediapipe_service.dart`, `pose_video_frame*.dart`,
+  `test/pose_mediapipe_test.dart`.
+- **Camera properties now:** `availableCameras()` with the normal picker and
+  manual switching, `ResolutionPreset.medium`, NV21 on Android, no audio,
+  `FlashMode.off`, ML Kit detection, plain image stream and plain video
+  recording; no Activity/capture orientation lock, no silent switching, no
+  recording `onAvailable` workaround and no anti-phantom layer.
+- **Files:** the restored/deleted files above and `PROJECT_STATE.md`.
+- **Validation:** `git diff v1.2.0` over all live-tracking code files is empty
+  (byte-for-byte release code); only `PROJECT_STATE.md` is modified in
+  `git status`. `dart format lib test` reported only the pre-release-style
+  `lib/web/web_pose_stub.dart`, which was restored byte-for-byte to `v1.2.0`
+  afterward. `flutter analyze lib test android` **No issues found**,
+  `flutter test` **97/97 passed** (the v1.2.0 baseline), and
+  `flutter build apk --debug` succeeded. The rebuilt
+  `build/app/outputs/flutter-apk/app-debug.apk` is 271,143,407 bytes (14:10
+  local); `aapt2 dump xmltree` found no `screenOrientation` or
+  `resizeableActivity`, and the APK contains no MediaPipe model or JNI library.
+- **Status:** Superseded by the TFLite MoveNet change below.
+
+### 2026-11-26 — Bring native Android live tracking to web-style MoveNet
+- **What:** Added a bundled TensorFlow Lite MoveNet Lightning detector for
+  native Android live squat tracking. It uses the same 17 COCO keypoints, crop
+  centered single-pose preprocessing, 0.25 pose-score rejection, and front
+  camera mirroring as the web TF.js MoveNet path.
+- **Why:** The user asked for the native Android experience to match the web
+  build, which uses MoveNet rather than ML Kit.
+- **Files:** Added `lib/services/pose_movenet.dart`,
+  `lib/services/pose_movenet_native.dart`, `lib/services/pose_movenet_stub.dart`,
+  `assets/models/movenet_lightning.tflite`, `test/pose_movenet_test.dart`;
+  updated `pubspec.yaml`, `pubspec.lock`, `android/gradle.properties`,
+  `windows/flutter/generated_plugins.cmake`,
+  `lib/services/pose_analysis_service.dart`,
+  `lib/screens/pose_tracking_screen.dart`, and `PROJECT_STATE.md`.
+- **Pipeline:** `PoseAnalysisService.detectFromCameraImage()` calls
+  `PoseMoveNetService` on Android and returns immediately. There is no ML Kit
+  fallback: a no-person frame or an engine error stays empty on Android. iOS
+  and web are unchanged.
+- **Runtime:** `tflite_flutter 0.12.1` with the XNNPACK delegate on Android.
+  The model asset is 4,758,512 bytes and is declared in `pubspec.yaml`. Input is
+  a `Uint8List` `[1,192,192,3]` tensor produced from packed NV21 through a
+  rotation-aware bilinear crop sampler; output allocation follows the model's
+  actual tensor shape, so both `[1,17,3]` and `[1,1,17,3]` are accepted.
+- **Gradle note:** `android/gradle.properties` sets
+  `kotlin.jvm.target.validation.mode=warning`. Newer Gradle hard-fails on
+  `tflite_flutter`'s Java 11 / Kotlin JVM-target mismatch; this downgrades it to
+  the documented warning without changing app or camera configuration.
+- **Camera properties:** unchanged from the 24 Nov release: `availableCameras()`
+  picker, manual switching, `ResolutionPreset.medium`, NV21 on Android, no
+  audio, `FlashMode.off`, plain image stream and plain video recording, no
+  Activity/capture orientation lock.
+- **Validation:** `flutter analyze lib test android` reports no issues;
+  `flutter test` passes **103/103** (six new MoveNet preprocessing tests);
+  `flutter build apk --debug` succeeds. The debug APK is 271,316,294 bytes and
+  contains `assets/models/movenet_lightning.tflite` plus TFLite JNI libraries for
+  arm64-v8a, armeabi-v7a and x86_64. `aapt2 dump xmltree` finds no
+  `screenOrientation` or `resizeableActivity`. No MediaPipe model or JNI library
+  is bundled; the existing `mediapipe-internal.properties` from ML Kit is still
+  present, exactly as in the 24 Nov release APK. `flutter build web` succeeds,
+  and the web TF.js MoveNet path is unchanged (the new model asset is simply
+  bundled but unused there).
+- **Status:** Superseded by the depth-capture change below.
+
+### 2026-11-26 — Capture relative 3D depth without slowing MoveNet
+- **What:** Added a signed `z` value to live keypoints, last-pose snapshots and
+  time-stamped replay frames. Android still runs TFLite MoveNet on every camera
+  frame; a throttled ML Kit sample (4 Hz, one in flight) supplies experimental
+  relative depth, which is cached and merged into the next MoveNet skeletons by
+  landmark name. iOS live/video ML Kit paths now populate `z` directly, and web
+  keeps `z == 0` because TF.js MoveNet is 2D-only.
+- **Why:** The user reported that the now-smooth live squat stream captured no
+  3D landmarks. ML Kit's z is in image-pixel units, normalized here by frame
+  width (negative = toward the camera, clamped to -1..1); Google documents it
+  as experimental and not a true calibrated 3D measurement.
+- **Files:** Added `test/pose_depth_test.dart`; updated
+  `lib/services/pose_analysis_service.dart`, `lib/models/pose_history_models.dart`,
+  `lib/screens/pose_tracking_screen.dart`,
+  `lib/screens/live_tracking_history_screen.dart`, `test/pose_replay_test.dart`,
+  `test/local_persistence_test.dart`, and `PROJECT_STATE.md`.
+- **Storage:** `PoseReplayFrame` now stores `[x, y, z, confidence]` per visualised
+  landmark. Legacy three-value frames are still parsed and decoded with `z = 0`,
+  so older history sessions keep loading.
+- **Validation:** `flutter analyze lib test android` reports no issues;
+  `flutter test` passes **106/106** (two new depth-helper tests plus updated
+  replay/persistence coverage). `flutter build apk --debug` succeeds; the debug
+  APK is 271,322,333 bytes and still contains the MoveNet model and TFLite JNI
+  with no MediaPipe model/JNI and no `screenOrientation`/`resizeableActivity`.
+  `flutter build web --no-wasm-dry-run` succeeds and the TF.js path is unchanged.
+- **Status:** Superseded by the depth visualisation change below.
+
+### 2026-11-26 — Visualize relative depth on live skeleton joints
+- **What:** `PoseSkeletonPainter` now encodes each joint's `z` as colour and
+  radius: blue/larger for landmarks closer to the camera, orange/smaller for
+  landmarks farther away, and the original white/size-4 node when `z == 0`.
+  The change applies to the live camera overlay, video tracking overlay, replay
+  overlay and saved-session skeleton because depth rendering is enabled by
+  default. The 2D connections and MoveNet stream are unchanged.
+- **Why:** The depth value was stored but invisible, so live squat tracking
+  still looked like a plain 2D skeleton. The user asked for 3D landmarks to be
+  visible on the subject without sacrificing the now-smooth stream.
+- **Files:** Added `test/pose_skeleton_depth_test.dart`; updated
+  `lib/widgets/pose_skeleton_painter.dart` and `PROJECT_STATE.md`.
+- **Validation:** `flutter analyze lib test android` reports no issues;
+  `flutter test` passes **107/107** (one new depth-visualisation test).
+  `flutter build apk --debug` succeeds (271,324,066 bytes) and
+  `flutter build web --no-wasm-dry-run` succeeds. The TF.js path is unchanged.
+- **Status:** Superseded by the skeleton visibility fix below.
+
+### 2026-11-26 — Show low-confidence MoveNet joints in live overlay
+- **What:** Lowered the live overlay's landmark threshold from 0.3 to 0.12.
+  TFLite MoveNet often reports per-joint scores below ML Kit's likelihood, so a
+  valid skeleton could be detected and counted while every joint was filtered
+  out of the painter. Live camera/video overlays, replay overlay, and the saved
+  session skeleton now use 0.12; replay frames also retain joints above 0.12.
+- **Why:** The user reported that the Android debug APK tracked well but plotted
+  no skeletal landmarks on the subject.
+- **Files:** Updated `lib/widgets/pose_skeleton_painter.dart`,
+  `lib/widgets/pose_replay_overlay.dart`, `lib/models/pose_history_models.dart`,
+  `lib/screens/pose_tracking_screen.dart`,
+  `lib/screens/live_tracking_history_screen.dart`, `test/pose_replay_test.dart`,
+  and `PROJECT_STATE.md`.
+- **Validation:** analyzer and tests passed at the time; final build validation
+  is recorded by the following Android tracking fix.
+
+### 2026-11-26 — Restore MoveNet tracking when no skeleton or reps appear
+- **What:** Fixed three fallbacks that could leave the Android stream empty or
+  blind: the TF.js crop clamp now uses the farthest frame edge instead of the
+  nearest so off-centre hips no longer shrink the crop to the torso; MoveNet
+  probes the other three frame rotations after repeated empty frames and locks
+  in the working one (no Activity/capture orientation change and no camera
+  switching); and knee/elbow angle, exercise classification and torso checks
+  use the same 0.12 landmark threshold as the painter and replay overlay.
+- **Why:** The user reported that the rebuilt Android debug APK plotted no
+  skeletal landmarks and counted no reps. With a wrong image-analysis rotation
+  or a crop collapsed around the hips, MoveNet returned a low pose score; with
+  drawing lowered to 0.12 but counting still at 0.3/0.4, borderline joints
+  could be visible yet never drive a rep.
+- **Files:** Updated `lib/services/pose_movenet_native.dart`,
+  `lib/screens/pose_tracking_screen.dart`, `test/pose_movenet_test.dart`, and
+  `PROJECT_STATE.md`.
+- **Validation:** `flutter analyze lib test android` clean; `flutter test`
+  passes **110/110** (two new MoveNet preprocessing tests);
+  `flutter build apk --debug` succeeds (`app-debug.apk`, 271,327,015 bytes) and
+  `flutter build web --no-wasm-dry-run` succeeds. The rebuilt APK contains
+  `assets/flutter_assets/assets/models/movenet_lightning.tflite` and TFLite JNI
+  for arm64-v8a/armeabi-v7a/x86_64, has no MediaPipe model or JNI, and its
+  manifest has no `screenOrientation`/`resizeableActivity` entries. Web TF.js
+  MoveNet is unchanged.
+- **Status:** Ready for on-device verification; still uncommitted.
+
+### 2026-11-26 — Make silent MoveNet failures visible and protect the frame stream
+- **What:** Restored the device-proven CameraX transport: Android live sessions
+  start the recording with `onAvailable: _processLiveFrame`, so the image
+  analysis use case is not unbound by a plain video recording. A 3-second
+  watchdog drops video and restarts a plain frame stream if that callback stops
+  delivering frames; it never switches cameras or changes orientation. If
+  callback recording cannot start at all, the session keeps tracking and skips
+  video rather than starting a plain recording that would unbind the stream.
+  The badge now reads `N FRAMES · N LANDMARKS`, and a silent MoveNet rejection
+  shows pose score, best joint score, count of joints above 0.20, selected
+  rotation and camera frame format in the amber status line. Errors and
+  reset/dispose paths clear the same diagnostics. Verified that `tflite_flutter`
+  passes a `Uint8List`
+  input straight to the uint8 tensor and decodes the nested float32 output into
+  the exact allocated shape, so no dequantisation or output reshape is missing.
+- **Why:** The user still reported “no skeleton appears in live squat tracking”
+  with the badge showing `0 LANDMARKS` and the generic “No person detected”
+  text. That single message hid two distinct causes: zero camera frames (the
+  CameraX recording issue already diagnosed on this device before the
+  `v1.2.0` revert) and a below-threshold pose score. Both now have an on-screen
+  signature, so the next device report can distinguish them without logcat.
+- **Files:** Updated `lib/screens/pose_tracking_screen.dart`,
+  `lib/services/pose_analysis_service.dart`,
+  `lib/services/pose_movenet_native.dart`,
+  `lib/services/pose_movenet_stub.dart`, and `PROJECT_STATE.md`.
+- **Validation:** `flutter analyze lib test android` clean; `flutter test`
+  passes **110/110**; `flutter build apk --debug` succeeds (`app-debug.apk`,
+  271,332,754 bytes) and `flutter build web --no-wasm-dry-run` succeeds. The APK
+  contains `assets/flutter_assets/assets/models/movenet_lightning.tflite` and
+  TFLite JNI for arm64-v8a/armeabi-v7a/x86_64, has no MediaPipe model or JNI,
+  and its manifest has no `screenOrientation`/`resizeableActivity` entries. Web
+  TF.js MoveNet is unchanged.
+- **Status:** Needs on-device verification; still uncommitted.
+
+### 2026-11-26 — Rotate the live camera stream 180° and stop phantom activity (superseded by the 270° entry below)
+- **Requested by user:** "In pose tracking → live tracking → live squat
+  tracking, rotate the live video stream to 180 degree. Avoid stale landmarks
+  and random activity getting generated." Follow-up: "camera orientation also
+  180 degree rotation" — the rotation must be on the camera capture, not just a
+  painted overlay.
+- **Camera rotation:** `_startLiveWithCamera()` now calls
+  `CameraController.lockCaptureOrientation(DeviceOrientation.portraitDown)`
+  on Android after initialization and before the frame stream/recording starts.
+  CameraX applies this to preview, video and `ImageAnalysis` together, so the
+  saved video and live preview are 180° while the Activity/app UI stays in its
+  normal orientation. The lock is released through
+  `unlockCaptureOrientation()` on stop, teardown and start errors because the
+  plugin keeps the lock across controller instances. Camera switching awaits the
+  old controller's release before locking the new one, so the shared CameraX
+  lock cannot be cleared after the replacement camera starts. Lens enumeration,
+  `availableCameras()` picker, manual switching, `ResolutionPreset.medium`, NV21,
+  `enableAudio: false`, `FlashMode.off`, the recording `onAvailable` callback
+  and the frame watchdog are unchanged.
+- **Detector alignment:** the detector and its empty-frame rotation probe are
+  deliberately unchanged — CameraX changes image-analysis rotation metadata but
+  not the pixel buffer, so the existing probe still adapts to devices that
+  deliver an already-rotated buffer. The new `PoseAnalysisService.rotate180()`
+  helper flips keypoints only when drawing the live skeleton and recorded replay,
+  leaving counters/classification in the detector's upright coordinates (a 180°
+  turn does not change joint angles).
+- **No stale landmarks / self-generated activity:** new
+  `lib/services/live_pose_stability.dart` requires six consecutive fresh frames
+  of the same body centre (≤0.12 normalized jump, ≤250 ms gap) before any
+  counter, classifier or replay sample runs. Missed detections immediately clear
+  `_liveKeypoints`, reset the gate and disarm squat/arm reps. Squat reps require
+  a knee angle below 100° held 250 ms; arm reps require an elbow below 80° held
+  250 ms. `_resetLiveTrackingState()` now clears landmarks and gate state too.
+- **Replay:** `LiveTrackingSession.streamRotated180` persists the flag (legacy
+  sessions default to false). The MP4 already carries 180° rotation metadata,
+  which `video_player` applies itself, so no second `RotatedBox` is added; only
+  `PoseReplayOverlay` gets `rotate180`, keeping recorded skeletons on the subject.
+- **Files:** `lib/services/live_pose_stability.dart` (new),
+  `test/live_pose_stability_test.dart` (new), `lib/screens/pose_tracking_screen.dart`,
+  `lib/services/pose_analysis_service.dart`, `lib/models/pose_history_models.dart`,
+  `lib/screens/live_tracking_history_screen.dart`, `lib/widgets/pose_replay_overlay.dart`.
+- **Validation (2026-11-26):** `dart format lib test` clean,
+  `flutter analyze lib test android` → **No issues found** (re-run after the
+  final camera-switch teardown change), `flutter test` → **115/115 passed**
+  (including the new 180° rotation, stability-gate, persistence and
+  replay-overlay regressions), and `flutter build apk --debug` →
+  `build\app\outputs\flutter-apk\app-debug.apk` built successfully. Gradle only
+  emitted its existing JDK/native-access and KGP warnings.
+- **Status:** Superseded by the 270° change below; the stability gate and
+  phantom-activity fixes remain in effect.
+
+### 2026-11-26 — Change the live camera rotation to 270° clockwise
+- **Requested by user:** "in pose tracking in live tracking in live squad
+  tracking rotate the live video stream to 270 degree, camera orentiation also
+  270 degree. avoid stale landmarks and random activity getting generated."
+  This supersedes the 180° iteration above; the freshness/continuity gate is kept.
+- **Camera rotation:** `_startLiveWithCamera()` still calls
+  `CameraController.lockCaptureOrientation(DeviceOrientation.landscapeLeft)` on
+  Android so preview, image capture, image analysis and video are all locked to
+  270° clockwise while the Activity/UI stays normal. This runs for every lens in
+  `availableCameras()` — front, back and any extra lenses — both on initial
+  selection and after `_switchCamera()` reopens the picker. The lock is released
+  on stop, teardown and start errors, and camera switching waits for the old
+  controller to release before locking the new one. Camera picker, manual
+  switching, `ResolutionPreset.medium`, NV21, `enableAudio: false`,
+  `FlashMode.off`, recording `onAvailable` and the frame watchdog are unchanged.
+- **Preview box:** `_buildLiveTrackingPreview()` uses `CameraPreview` again so
+  the plugin owns the texture rotation and aspect ratio; the custom
+  `buildPreview()` + `RotatedBox()` + flipped-aspect code was removed because it
+  stretched the stream. `_livePreviewAspectRatio()` mirrors `CameraPreview`'s
+  rule (locked landscape uses `value.aspectRatio`, portrait uses its inverse) so
+  the outer box matches the rotated texture exactly instead of letterboxing it.
+- **Landmarks:** the detector returns upright keypoints, which are rotated into
+  the preview's display space with `PoseAnalysisService.rotateStream(...)` at
+  the same 270° as the texture. The skeleton is painted as `CameraPreview`'s
+  child, so every fresh detection moves it with the human subject in real time
+  while staying locked to the rotated video. Counters/classification keep
+  detector coordinates because joint angles are rotation-invariant; the detector
+  and its rotation probe are unchanged.
+- **Persistence/replay:** `LiveTrackingSession.streamRotated180` became
+  `streamRotationDegrees` (new sessions store 270; legacy `true` still maps to
+  180). `PoseReplayOverlay` takes `rotationDegrees`. Replay videos continue to
+  rely on `video_player`'s own MP4 rotation metadata; no second `RotatedBox` is
+  added, so the skeleton is only rotated once.
+- **Files:** `lib/screens/pose_tracking_screen.dart`,
+  `lib/services/pose_analysis_service.dart`, `lib/models/pose_history_models.dart`,
+  `lib/widgets/pose_replay_overlay.dart`,
+  `lib/screens/live_tracking_history_screen.dart`,
+  `test/live_pose_stability_test.dart`, `test/local_persistence_test.dart`,
+  `test/pose_replay_test.dart`.
+- **Validation (2026-11-26):** `dart format lib test` clean,
+  `flutter analyze lib test android` → **No issues found**, `flutter test` →
+  **118/118 passed** (including 180°/270° transforms, legacy migration,
+  stability gate and replay overlay), and `flutter build apk --debug` rebuilt
+  `build\app\outputs\flutter-apk\app-debug.apk` successfully.
+- **Status:** Uncommitted; needs on-device verification that the live preview
+  and saved video are 270° clockwise with the skeleton aligned, the app UI does
+  not rotate, camera switching keeps the lock, and reps only change during
+  sustained real movement.
+
+### 2026-11-26 — Track the moving subject without stretching the live preview
+- **Requested by user:** skeleton must move with the detected human subject in
+  real time, and the live video must look like a normal Android camera stream
+  instead of being visibly stretched.
+- **Fix:** `_buildLiveTrackingPreview()` uses `CameraPreview` again (with the
+  skeleton as its `child`) so the plugin owns the texture rotation and aspect
+  ratio. The experimental `controller.buildPreview()` + `RotatedBox` + flipped
+  outer aspect-ratio code was removed; it double-corrected the plugin's own
+  rotation and stretched the stream. `_livePreviewAspectRatio()` follows the
+  same locked-orientation rule as `CameraPreview`, so the box matches the video
+  exactly.
+- **Skeleton:** `_displayLiveKeypoints` rotates each fresh detection by
+  `_liveStreamRotationDegrees` (270°: `x' = y`, `y' = 1 - x`) into the preview's
+  display space. The overlay repaints on every new keypoint list, so it follows
+  the subject continuously while staying locked to the rotated video.
+- **Files:** `lib/screens/pose_tracking_screen.dart`, `PROJECT_STATE.md`.
+- **Validation (2026-11-26):** `dart format lib test` clean,
+  `flutter analyze lib test android` → **No issues found**, `flutter test` →
+  **118/118 passed**, `flutter build apk --debug` succeeded.
+
+### 2026-11-27 — Live Exercise Tracking, category-aware counting and skeleton lock
+- **Requested by user:** "in pose tracking in live tracking change the name from
+  \"live squat tracking\" to \"live exercise tracking\" in this live exercise
+  tracking identify the exercise correctly whether its an upper body exercise or
+  lower body exercise or core exercise and then accordingly update the exercise
+  counter. skeleton markings are still unable to identify the human subject
+  correctly in real time."
+- **Rename:** the button, empty-state copy, `_startLiveSquatTracking()` →
+  `_startLiveExerciseTracking()` and the widget test now say **LIVE EXERCISE
+  TRACKING (PERSON IN FRONT OF CAMERA)**. The banner shows the detected family
+  (`UPPER BODY`, `LOWER BODY`, `CORE`, or `ANALYSING`) above the movement name.
+- **Classification/counters:** new `lib/services/live_exercise_classifier.dart`
+  replaces the old screen-local classifier. It computes knee/elbow/hip angles in
+  MoveNet's upright frame (rotation-invariant), picks one active movement from
+  geometry — squat (lower), curl/push-up (upper), crunch/plank (core) — and only
+  counts that movement. A 250 ms held-position gate plus a freshness/continuity
+  gate prevent jitter, held poses and brief detection gaps from producing reps.
+  A curl with slightly bent knees no longer increments the squat counter; a
+  static straight-arm plank is core with no rep. The last identified exercise
+  stays visible while the person rests so the counter does not vanish from the
+  live UI or a saved session. `LiveTrackingSession` now saves
+  `coreCount`; existing `squatCount`/`curlCount`/`pushupCount` and history JSON
+  stay compatible.
+- **Skeleton:** the overlay still rotates fresh keypoints by the capture lock
+  (270°) with `PoseAnalysisService.rotateStream`. Reviewing `camera_preview.dart`
+  and `camera_android_camerax.dart` showed the plugin first corrects its texture
+  to the device's upright frame while MoveNet's rotation probe also produces an
+  upright frame, so subtracting `camera.sensorOrientation` would double-correct
+  front/back lenses. The single 270° lock rotation is used for every lens and is
+  saved as `streamRotationDegrees` for replay.
+- **Files:** `lib/screens/pose_tracking_screen.dart`,
+  `lib/services/live_exercise_classifier.dart`,
+  `lib/services/pose_analysis_service.dart`,
+  `lib/models/pose_history_models.dart`, `test/widget_test.dart`,
+  `test/live_exercise_classifier_test.dart`, `PROJECT_STATE.md`.
+- **Validation (2026-11-27):** `dart format lib test` clean,
+  `flutter analyze lib test android` → **No issues found**, `flutter test` →
+  **126/126 passed** (including category routing, cross-counter isolation,
+  plank/crunch detection, counter persistence and held-position gates).
+- **Status:** Uncommitted. On-device verification is still required: preview and
+  saved video must be 270° clockwise with the skeleton on the subject through
+  movement and every lens switch, and the name/category/counter must only change
+  during sustained real exercise.
+
+### 2026-11-27 — Login/update fixes, palette relocation and Gemini presets
+- **What:** Fixed the login "Check for updates" always offering `v1.2.0` by
+  aligning `UpdateService.currentVersion` with `pubspec.yaml`. Added a **Resume
+  saved session** button to the login gate that reopens the signed-out profile
+  without deleting data or creating a new guest/new-user session. Removed the
+  "Palette: …" label from Home, moved the Auto palette button to login, and made
+  the sign-out icon and session cards use palette-derived colours instead of the
+  fixed peach/red values. Removed the extra guest-card fill. Reworked the API key
+  row so the key field flexes and the Validate button stays inside the dialog
+  card. Replaced the 2.5/2.0 Gemini presets with 3.8 Flash and 3.5 Flash Lite
+  (3.1 Flash Lite kept, Custom kept).
+- **Why:** A stale build version made the app claim it was out of date; users
+  also needed a way back into an existing session after signing out. Fixed
+  colours ignored the active palette and cramped the key dialog.
+- **Files:** `lib/services/update_service.dart`, `lib/state/session_state.dart`,
+  `lib/screens/login_screen.dart`, `lib/screens/home_screen.dart`,
+  `lib/services/api_key_service.dart`, `lib/widgets/api_key_dialog.dart`,
+  `test/session_login_test.dart`, `test/update_service_test.dart`,
+  `test/api_key_service_test.dart`, `test/theme_test.dart`.
+- **Validation:** targeted `flutter analyze` clean; full `flutter analyze` clean;
+  `flutter test` → **141/141 passed**.
+- **Status:** Uncommitted. Existing saved keys keep their stored endpoint; only
+  the preset list changed.
+
+### 2026-11-27 — Diet nutrient graphs, date-range export, slot selection and workout overflow
+- **What:** Saving an analysed food now opens a nutrient sheet with a bar chart
+  for that food, the current week's aggregated nutrients and the top
+  contributor foods. The diet summary gained a date-range selector (All time,
+  custom range, last 7/30 days) that filters the daily breakdown, nutrient
+  charts and CSV/PDF exports. Tapped time slots now switch to the palette
+  primary colour, scale up, show a check icon and a "Selected HH:00" banner, and
+  the editor moved directly below the grid. Fixed the 15 px right-edge overflow
+  when viewing saved workouts by making the result header, routine title,
+  section title, metric badges and bottom action buttons flexible/scale-down,
+  and constraining the saved-card date row.
+- **Why:** Users could see Gemini nutrients only as chips, could not choose how
+  many days to export, could not tell which slot was open, and narrow phones
+  overflowed the workout view.
+- **Files:** `lib/services/nutrient_analysis.dart` (new),
+  `lib/widgets/nutrient_chart.dart` (new), `lib/models/diet_models.dart`
+  (reused), `lib/state/diet_state.dart`, `lib/screens/diet_screen.dart`,
+  `lib/screens/workout_result_screen.dart`,
+  `lib/screens/saved_workouts_screen.dart`, `test/nutrient_analysis_test.dart`
+  (new), `test/workout_overflow_test.dart` (new), `test/diet_test.dart`.
+- **Validation:** `flutter analyze` → **No issues found**; `flutter test` →
+  **147/147 passed** (including nutrient parsing/normalisation, range filtering
+  and 360 px overflow checks).
+- **Status:** Committed and released as v1.3.0 (see release entry below).
+
+### 2026-11-27 — Release v1.3.0: security review, signed APK and GitHub release
+- **What:** Prepared all uncommitted 2026-11-25/26/27 work for release. Bumped
+  the version from `1.2.0+3` to `1.3.0+4` in `pubspec.yaml` and aligned
+  `UpdateService.currentVersion` to `1.3.0`. Ran a full secret scan of every
+  modified and untracked file: no real credentials appear in the diff; the
+  only API-key-like strings are obvious test/docs placeholders
+  (`AIzaSyAbCdEfGh1234567890`, `SECRET_KEY_VALUE`), and the real Gemini key
+  lives only in git-ignored `env.json`. Confirmed `.gitignore` excludes
+  `env.json`, `android/key.properties`, signing keys, `.env*` and `*.secrets`.
+  The git remote has no embedded credentials (HTTPS remote, credentials held
+  by the Windows Credential Manager `manager` helper).
+- **Validation:** `flutter pub get` succeeded; `flutter analyze lib test android`
+  → **No issues found**; `flutter test` → **147/147 passed**;
+  `flutter build apk --release` → signed release APK built.
+- **Files:** version bump in `pubspec.yaml` and
+  `lib/services/update_service.dart`; all prior uncommitted feature/fix files
+  committed in this release.
+- **Status:** Committed, tagged `v1.3.0`, pushed to `origin/main`, and published
+  as a GitHub release with the signed `app-release.apk` plus SHA-256 checksum.
+
 ---
 
 ## 6. Gotchas / Lessons Learned
@@ -1523,6 +2540,128 @@ flutter build web --release
     select the nearest sample from `VideoPlayerController.position`. Do not
     store every ML Kit frame — it would bloat the single encrypted Hive JSON
     value and slow every history read.
+36. **Padded NV21 cannot be fixed by truncation:** if `bytesPerRow > width`,
+    the first `width × height × 1.5` bytes contain row padding and lose the
+    bottom of the image. Rebuild the buffer row-by-row using the Y stride and
+    the chroma stride; only trim when the buffer is already tightly packed.
+37. **MediaPipe IMAGE-mode visibility is not a reliable draw gate:** the task
+    bundle can emit 0 or very low visibility for visible landmarks. Treat
+    `<= 0.2` as unknown instead of discarding points, or the detector can find
+    a person while the painter draws nothing and History says “no tracking”.
+38. **CameraX recording can silently stop image streaming:** on hardware below
+    `LEVEL_3`, `startVideoRecording()` without an `onAvailable` callback unbinds
+    `imageAnalysis` while leaving the preview alive. Use
+    `startVideoRecording(onAvailable: callback)` for simultaneous recording and
+    detection, and keep a frame-count watchdog to fall back to
+    `startImageStream()` with no video when the device refuses.
+39. **Check MediaPipe's Java signatures against the cached AAR:** 1.2.2 returns
+    `Optional<Float>` for landmark visibility/presence. A cast to `Number`
+    compiles only because Kotlin erases the generic, then throws on Android.
+    Use `javap` on the Gradle-cached `tasks-core` / `tasks-vision` classes when
+    upgrading the dependency.
+40. **IMAGE mode re-detects a stranger every frame:** use `RunningMode.VIDEO`
+    with strictly increasing timestamps for camera streams so MediaPipe can
+    track one person temporally; reset the timestamp when the landmarker is
+    recreated.
+41. **A held skeleton must not become an athlete:** reusing the last pose after
+    a missed frame prevents overlay flicker, but mark it stale and skip all
+    counters/classifiers/replay sampling until a fresh detection arrives.
+42. **Prefer the front camera for person-facing tracking:** defaulting to the
+    first camera can pick a rear lens and force the user to re-aim the phone;
+    keep a switch button so the choice is still explicit.
+43. **Automatic camera failover must await release:** opening the next
+    `CameraController` while the old recording/stream is still disposing makes
+    cameras report as busy. Stop recording, stop analysis, dispose, then open
+    the next lens.
+44. **Separate draw confidence from counting reliability:** promoting 0/low
+    MediaPipe visibility makes landmarks visible, but that same promoted value
+    must not be used to count reps. Keep the raw visibility as `reliability`,
+    use metric world angles, and require several consecutive same-subject
+    frames with a held movement before any activity is recorded.
+45. **Do not let the detector silently pick the camera:** the released
+    2026-11-24 camera path (enumerate every lens, user picker, medium/NV21
+    controller) was verified by the user; automatic lens failover to "find a
+    pose" added framing friction. Layer MediaPipe on the verified stream
+    instead, and never switch lenses or change camera properties to chase a
+    pose.
+46. **CameraX unbinds `ImageAnalysis` for a plain recording:** in
+    `camera_android_camerax-0.6.30`, `startVideoRecording()` ->
+    `startVideoCapturing()` calls `_unbindUseCaseFromLifecycle(imageAnalysis!)`
+    whenever no frame callback is supplied (all hardware levels except LEVEL_3
+    with a callback). The preview/video still looks smooth, so it looks like a
+    detector bug, but MediaPipe receives zero frames. Start Android recording
+    with `onAvailable: _processLiveFrame`; the plugin then rebinds analysis via
+    `onStreamedFrameAvailable()`. Keep a plain image stream as fallback and
+    stop the recording stream before disposing the controller.
+47. **Never hard-code the inverse camera aspect ratio for the preview:** the
+    camera reports a landscape sensor ratio (`width / height`). `CameraPreview`
+    uses that ratio directly in landscape and its inverse only in portrait,
+    while also rotating the Android texture. Wrapping it in a permanently
+    inverted `AspectRatio` squeezes/letterboxes the native frame and pushes the
+    landmark overlay off the subject. Mirror the plugin's orientation rules
+    (`recordingOrientation` while recording, otherwise preview/locked/device
+    orientation) and rebuild the box via `ValueListenableBuilder<CameraValue>`.
+48. **Matching the frame is not the same as choosing its orientation:** after
+    fixing the overlay box, a landscape-held device still produced landscape
+    video because the Activity and `CameraController` capture orientation were
+    unlocked. For a portrait-default stream, request portrait orientation for
+    the live screen and call `lockCaptureOrientation(DeviceOrientation.portraitUp)`
+    before starting the frame stream/recording; pass rotation 0 to the detector
+    when that lock succeeds.
+49. **Dart orientation locks can lose to native CameraX state:** on the Android
+    16 test device, `SystemChrome.setPreferredOrientations()` plus
+    `lockCaptureOrientation()` still produced a landscape stream. Lock the
+    Activity natively in `AndroidManifest.xml`
+    (`android:screenOrientation="portrait"`, `android:resizeableActivity="false"`)
+    and in `MainActivity.onCreate()` before Flutter initializes the camera.
+    Once the Activity is portrait, treat Android camera frames as portrait when
+    rotating landmarks instead of trusting `Display.getRotation()`.
+50. **Never rotate the Activity for the live stream:** the user rejected both
+    APK-wide and live-session Activity locks. Keep the manifest/orientation
+    unspecified, use only
+    `CameraController.lockCaptureOrientation(DeviceOrientation.landscapeLeft)`,
+    and rotate Android landmarks as `Surface.ROTATION_90`. CameraX rotates the
+    preview/video buffers inside the unchanged app UI.
+51. **Use the native CameraX selector for live lenses:** enumerate with
+    `ProcessCameraProvider.availableCameraInfos` and Camera2 characteristics on
+    Android, then map the chosen camera id back to a `CameraDescription` for the
+    verified camera plugin. This preserves the native multi-lens picker without
+    replacing the working preview/frame transport.
+52. **Prime `camera_android_camerax` when bypassing `availableCameras()`:** its
+    `CameraInfo`/`LiveData` Pigeon wrapper factories are registered only inside
+    `availableCameras()`. If a native selector supplies the camera list, still
+    call `availableCameras()` once before `CameraController.initialize()`,
+    otherwise the plugin casts generated `camerax_library.g.dart.CameraInfo` to
+    `camerax_library.dart.CameraInfo` and live startup fails.
+53. **Mirror TF.js crop math exactly:** `determineNextCropRegion` clamps the
+    half-size with `max(edge distances)`, not `min`. Using the nearest edge
+    collapses an off-centre person into a tiny crop and MoveNet returns no pose.
+    Probe the frame rotation when this happens; CameraX can deliver an
+    already-rotated buffer while `CameraDescription.sensorOrientation` still
+    reports the physical sensor angle. Keep the probe inside the detector so the
+    verified camera picker and orientation stay untouched.
+ 54. **Rotate the camera, not the Activity, for a rotated live stream:** use
+    `CameraController.lockCaptureOrientation(...)` — `portraitDown` for 180° or
+    `landscapeLeft` for 270° clockwise — before starting frames so preview,
+    video and analysis all rotate while the app UI stays put, and unlock
+    explicitly on teardown because CameraX keeps the lock across controller
+    instances. Leave the detector rotation probe alone: CameraX changes
+    ImageAnalysis rotation metadata, not the pixel buffer, so the existing probe
+    still handles devices that deliver rotated buffers. Rotate only the drawn
+    skeleton/replay with `rotateStream(keypoints, degrees)`; counters keep using
+    detector coordinates because joint angles are invariant under rotation.
+    Mirror `CameraPreview`'s landscape/portrait aspect-ratio rule in the outer
+    preview box or the rotated texture gets letterboxed.
+ 55. **A drawn skeleton is not a fresh skeleton:** clear landmarks when a frame
+     returns no pose, and require several consecutive same-subject frames before
+     feeding counters/classifiers. Otherwise a held or jumping skeleton becomes
+     "random activity" with no athlete moving.
+ 56. **Do not subtract `camera.sensorOrientation` from the overlay rotation:**
+     `camera_android_camerax` corrects its texture to the upright device frame and
+     MoveNet's rotation probe independently outputs upright keypoints. The only
+     remaining transform is `CameraPreview`'s locked rotation (270° for
+     `landscapeLeft`). Subtracting the sensor angle makes front cameras skip the
+     overlay turn and back cameras stop 90° early.
 
 ---
 
@@ -1555,6 +2694,26 @@ flutter build web --release
       signed APK plus checksum (done 2026-11-23; see §5 release entry).
 - [x] Commit/push the 2026-11-24 fixes, tag **v1.2.0**, and publish the signed
       APK plus checksum (done 2026-11-24; see §5 release entry).
+- [ ] **Immediate:** verify the 270° live-camera change on the Android 16
+      device: open live exercise tracking, confirm the whole app UI stays in its
+      normal orientation while the camera preview/video is rotated 270° clockwise,
+      switch through **every available lens** (front, back and any extra cameras)
+      and confirm the lock and skeleton alignment survive each switch, check the
+      skeleton stays on the subject in both live preview and replay, and confirm
+      the exercise category, name and counter only change after sustained real
+      movement (no activity when the person is still or briefly missing).
+- [ ] **Immediate:** install the freshly rebuilt 2026-11-26 debug APK (not the
+      GitHub v1.2.0 release) on the Android device. Confirm the whole app stays
+      in its normal orientation, then start live tracking and choose any camera
+      from the `availableCameras()` picker. Confirm the badge reports a rising
+      frame count, the MoveNet skeleton and depth-coloured joints appear on the
+      subject, the exercise name/counter and knee/elbow angles update during
+      real squats, there are no silent lens switches, and the replay video shows
+      the recorded skeleton. If the skeleton is still missing, share the exact
+      badge and amber status text: `0 FRAMES` means the camera transport stalled;
+      `N FRAMES` plus `MoveNet: pose …` means inference ran and the pose score
+      was below 0.25. USB `logcat` is only needed if neither line appears; the
+      v1.2.0 release APK cannot contain the TFLite MoveNet/depth layer.
 - [ ] User verification on the Android 16 device: landmarks, exercise ID,
       knee/elbow angles and rep counts update live; diet slots show green/red
       correctly; Rest goals save; food units appear; CSV/PDF exports are
